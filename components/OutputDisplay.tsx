@@ -1,18 +1,20 @@
 
 import React, { useState, useMemo } from 'react';
 import { EngineeringOutput } from '../types';
-import { CopyIcon, CheckIcon, ErrorIcon, SpeakerIcon } from './Icons';
+import { CopyIcon, CheckIcon, ErrorIcon, SpeakerIcon, PauseIcon } from './Icons';
 import Spinner from './Spinner';
+
+type AudioState = 'idle' | 'generating' | 'playing' | 'paused';
 
 interface OutputDisplayProps {
   output: EngineeringOutput | null;
   error: string | null;
   isGenerating: boolean;
-  onSpeak: (text: string) => void;
-  isAudioPlaying: boolean;
+  onPlayPause: (text: string) => void;
+  audioState: AudioState;
 }
 
-const OutputDisplay: React.FC<OutputDisplayProps> = ({ output, error, isGenerating, onSpeak, isAudioPlaying }) => {
+const OutputDisplay: React.FC<OutputDisplayProps> = ({ output, error, isGenerating, onPlayPause, audioState }) => {
   const [activeTab, setActiveTab] = useState('all');
   const [copied, setCopied] = useState(false);
 
@@ -26,6 +28,19 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({ output, error, isGenerati
     navigator.clipboard.writeText(JSON.stringify(output, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const renderPlayPauseIcon = () => {
+    switch (audioState) {
+      case 'generating':
+        return <Spinner size="sm" />;
+      case 'playing':
+        return <PauseIcon className="w-5 h-5" />;
+      case 'paused':
+      case 'idle':
+      default:
+        return <SpeakerIcon className="w-5 h-5" />;
+    }
   };
   
   const renderContent = () => {
@@ -64,12 +79,12 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({ output, error, isGenerati
       <div className="relative h-full">
         <div className="absolute top-2 right-2 flex gap-2">
             <button 
-              onClick={() => onSpeak(output.final_recommendation)} 
-              disabled={isAudioPlaying || !output.final_recommendation}
+              onClick={() => onPlayPause(output.final_recommendation)} 
+              disabled={audioState === 'generating' || !output.final_recommendation}
               className="p-2 bg-gray-700 hover:bg-gray-600 rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Speak recommendation"
+              aria-label={audioState === 'playing' ? 'Pause recommendation' : 'Play recommendation'}
             >
-              {isAudioPlaying ? <Spinner size="sm"/> : <SpeakerIcon className="w-5 h-5" />}
+              {renderPlayPauseIcon()}
             </button>
             <button onClick={handleCopy} className="p-2 bg-gray-700 hover:bg-gray-600 rounded-md transition">
               {copied ? <CheckIcon className="w-5 h-5 text-green-400" /> : <CopyIcon className="w-5 h-5" />}

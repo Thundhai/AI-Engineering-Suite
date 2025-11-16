@@ -48,8 +48,8 @@ describe('generateEngineeringOutput', () => {
 
     (mockGenerateContent as any).mockResolvedValue(mockApiResponse);
 
-    // FIX: Added missing 'mode' argument.
-    const result = await generateEngineeringOutput('test prompt', ['Civil Engineering Agent'], 'Balanced');
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    const result = await generateEngineeringOutput('test prompt', ['Civil Engineering Agent'], 'Balanced', [], false);
 
     expect(result.status).toBe('success');
     expect(result.active_agents).toEqual(['Civil Engineering Agent']);
@@ -82,8 +82,8 @@ describe('generateEngineeringOutput', () => {
 
     (mockGenerateContent as any).mockResolvedValue(mockApiResponse);
 
-    // FIX: Added missing 'mode' argument.
-    const result = await generateEngineeringOutput('test prompt', ['Civil Engineering Agent'], 'Balanced');
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    const result = await generateEngineeringOutput('test prompt', ['Civil Engineering Agent'], 'Balanced', [], false);
 
     expect(result.status).toBe('success');
     expect(result.inputs_confirmed).toEqual({ load: '100kN' });
@@ -97,48 +97,48 @@ describe('generateEngineeringOutput', () => {
   // ERROR CASES
   it('should throw a specific error for an invalid API key', async () => {
     (mockGenerateContent as any).mockRejectedValue(new Error('API key not valid'));
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("Authentication failed: The API Key is not valid. Please ensure it is configured correctly.");
   });
   
   it('should throw a specific error for a 400 bad request', async () => {
     (mockGenerateContent as any).mockRejectedValue(new Error('[400 Bad Request] Invalid argument'));
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("Invalid request: The model could not process the request. This might be due to an unclear prompt or a configuration issue. Please try rephrasing your request or check the selected agents.");
   });
   
   it('should throw a specific error for a 429 quota exceeded error', async () => {
     (mockGenerateContent as any).mockRejectedValue(new Error('429 Resource has been exhausted (e.g. check quota).'));
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("Quota exceeded: You have exceeded your request limit for the AI model. Please check your usage or try again later.");
   });
 
   it('should throw a specific error for a 500 internal server error', async () => {
     (mockGenerateContent as any).mockRejectedValue(new Error('500 Internal error'));
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("Service error: The AI service encountered a temporary internal error. Please wait a moment and try again.");
   });
 
   it('should throw a specific error for a 503 service unavailable error', async () => {
     (mockGenerateContent as any).mockRejectedValue(new Error('503 Service Unavailable'));
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("Service unavailable: The AI service is currently unavailable or overloaded. Please try again in a few minutes.");
   });
   
   it('should throw a specific error for a network failure', async () => {
     (mockGenerateContent as any).mockRejectedValue(new Error('fetch failed'));
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("Network error: Failed to connect to the AI service. Please check your internet connection.");
   });
@@ -146,8 +146,8 @@ describe('generateEngineeringOutput', () => {
   // EDGE CASE: Empty response
   it('should throw an error for an empty response from the API', async () => {
     (mockGenerateContent as any).mockResolvedValue({ text: '' });
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("Received an invalid or empty response from the Gemini API.");
   });
@@ -155,8 +155,8 @@ describe('generateEngineeringOutput', () => {
   // JSON PARSING ERROR
   it('should throw an error if the API returns malformed JSON', async () => {
     (mockGenerateContent as any).mockResolvedValue({ text: '{"status": "success", ' }); // Incomplete JSON
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("The model returned a malformed JSON response.");
   });
@@ -170,8 +170,8 @@ describe('generateEngineeringOutput', () => {
       }),
     };
     (mockGenerateContent as any).mockResolvedValue(mockApiResponse);
-    // FIX: Added missing 'mode' argument.
-    await expect(generateEngineeringOutput('test', ['test'], 'Balanced'))
+    // FIX: Added missing 'files' and 'isRedactionEnabled' arguments.
+    await expect(generateEngineeringOutput('test', ['test'], 'Balanced', [], false))
         .rejects
         .toThrow("The model's response is missing required data fields after parsing.");
   });

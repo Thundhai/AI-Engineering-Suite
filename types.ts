@@ -1,13 +1,22 @@
+import React from 'react';
 
 export interface Agent {
   name: string;
   description: string;
   category: string;
+  icon: React.FC<{ className?: string }>;
+}
+
+export interface UploadedFile {
+  name: string;
+  mimeType: string;
+  data: string; // base64 encoded
 }
 
 export type GenerationMode = 'Fast' | 'Balanced' | 'Complex';
 
 export interface ChatMessage {
+  id: string;
   role: 'user' | 'model';
   content: string;
 }
@@ -30,4 +39,17 @@ export interface EngineeringOutput {
   method_statement: Record<string, any>;
   risk_assessment: Record<string, any>;
   final_recommendation: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  prompt: string;
+  selectedAgents: string[];
+  uploadedFiles: UploadedFile[];
+  generationMode: GenerationMode;
+  isRedactionEnabled: boolean;
+  output: EngineeringOutput | null;
+  chatHistory: ChatMessage[];
 }

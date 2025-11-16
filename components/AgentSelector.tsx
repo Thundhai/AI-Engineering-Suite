@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { AGENTS } from '../constants';
 import { Agent } from '../types';
@@ -9,18 +8,27 @@ interface AgentSelectorProps {
   suggestedAgents: Set<string>;
   onAgentToggle: (agentName: string) => void;
   isDetecting: boolean;
+  disabled: boolean;
 }
 
-const AgentCard: React.FC<{ agent: Agent, isSelected: boolean, isSuggested: boolean, onToggle: () => void }> = ({ agent, isSelected, isSuggested, onToggle }) => {
-  const baseClasses = "p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 h-full flex flex-col justify-between";
+const AgentCard: React.FC<{ agent: Agent, isSelected: boolean, isSuggested: boolean, onToggle: () => void, disabled: boolean }> = ({ agent, isSelected, isSuggested, onToggle, disabled }) => {
+  const baseClasses = "p-3 rounded-lg border-2 transition-all duration-200 h-full flex flex-col justify-between";
   const selectedClasses = "bg-cyan-800/50 border-cyan-500 shadow-lg shadow-cyan-900/50";
   const suggestedClasses = "border-dashed border-cyan-400";
   const defaultClasses = "bg-gray-800/70 border-gray-700 hover:border-cyan-600 hover:bg-gray-700/50";
+  const disabledClasses = "cursor-not-allowed";
+  const IconComponent = agent.icon;
 
   let finalClasses = `${baseClasses} `;
+  if (disabled) {
+    finalClasses += disabledClasses;
+  } else {
+     finalClasses += 'cursor-pointer ';
+  }
+
   if (isSelected) {
     finalClasses += selectedClasses;
-  } else if (isSuggested) {
+  } else if (isSuggested && !disabled) {
     finalClasses += `${suggestedClasses} ${defaultClasses}`;
   }
   else {
@@ -28,8 +36,9 @@ const AgentCard: React.FC<{ agent: Agent, isSelected: boolean, isSuggested: bool
   }
 
   return (
-    <div className={finalClasses} onClick={onToggle}>
+    <div className={finalClasses} onClick={!disabled ? onToggle : undefined}>
       <div>
+        <IconComponent className="w-7 h-7 mb-2 text-cyan-400" />
         <h4 className="font-bold text-sm text-white">{agent.name.replace(' Agent', '')}</h4>
         <p className="text-xs text-gray-400 mt-1">{agent.description}</p>
       </div>
@@ -40,12 +49,12 @@ const AgentCard: React.FC<{ agent: Agent, isSelected: boolean, isSuggested: bool
   );
 };
 
-const AgentSelector: React.FC<AgentSelectorProps> = ({ selectedAgents, suggestedAgents, onAgentToggle, isDetecting }) => {
+const AgentSelector: React.FC<AgentSelectorProps> = ({ selectedAgents, suggestedAgents, onAgentToggle, isDetecting, disabled }) => {
   return (
-    <div className="bg-gray-800 rounded-lg p-4 shadow-lg border border-gray-700 flex-grow">
+    <div className={`bg-gray-800 rounded-lg p-4 shadow-lg border border-gray-700 flex-grow transition-opacity ${disabled ? 'opacity-50' : 'opacity-100'}`}>
       <div className="flex items-center gap-3 mb-3">
         <h2 className="text-lg font-semibold text-cyan-400">2. Select Agents</h2>
-        {isDetecting && <Spinner />}
+        {isDetecting && !disabled && <Spinner />}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3">
         {AGENTS.map(agent => (
@@ -55,6 +64,7 @@ const AgentSelector: React.FC<AgentSelectorProps> = ({ selectedAgents, suggested
             isSelected={selectedAgents.has(agent.name)}
             isSuggested={suggestedAgents.has(agent.name)}
             onToggle={() => onAgentToggle(agent.name)}
+            disabled={disabled}
           />
         ))}
       </div>

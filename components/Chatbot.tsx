@@ -1,19 +1,20 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { ChatMessage } from '../types';
 import { CloseIcon, SendIcon } from './Icons';
 import Spinner from './Spinner';
-import { generateChatResponse } from '../services/geminiService';
 
 interface ChatbotProps {
   isOpen: boolean;
   onClose: () => void;
+  messages: ChatMessage[];
+  onSend: (input: string) => Promise<void>;
+  isLoading: boolean;
 }
 
-const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose, messages, onSend, isLoading }) => {
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -21,26 +22,36 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   };
 
   useEffect(scrollToBottom, [messages]);
+  
+  // Auto-collapse new long messages
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === 'model') {
+      const isLong = lastMessage.content.split('\n').length > 5 || lastMessage.content.length > 300;
+      if (isLong) {
+        setCollapsedMessages(prev => new Set(prev).add(lastMessage.id));
+      }
+    }
+  }, [messages]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
-
-    const userMessage: ChatMessage = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
-    setIsLoading(true);
+    await onSend(currentInput);
+  };
 
-    try {
-      const response = await generateChatResponse(input);
-      const modelMessage: ChatMessage = { role: 'model', content: response };
-      setMessages(prev => [...prev, modelMessage]);
-    } catch (error) {
-      const errorMessage: ChatMessage = { role: 'model', content: 'Sorry, I ran into an error. Please try again.' };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
+  const handleToggleCollapse = (messageId: string) => {
+    setCollapsedMessages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId);
+      } else {
+        newSet.add(messageId);
+      }
+      return newSet;
+    });
   };
 
   return (
@@ -51,15 +62,31 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
           <CloseIcon className="w-6 h-6" />
         </button>
       </header>
-      <div className="flex-1 p-4 overflow-y-auto h-96">
+      <div className="flex-1 p-4 overflow-y-auto h-96 max-h-[65vh]">
         <div className="flex flex-col gap-4">
-          {messages.map((msg, index) => (
-            <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-xs md:max-w-sm rounded-lg px-4 py-2 ${msg.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+          {messages.map((msg) => {
+            const isModel = msg.role === 'model';
+            const isLong = msg.content.split('\n').length > 5 || msg.content.length > 300;
+            const isCollapsed = isModel && isLong && collapsedMessages.has(msg.id);
+            
+            const contentToShow = isCollapsed 
+              ? `${msg.content.substring(0, 100)}...`
+              : msg.content;
+
+            return (
+              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div 
+                  onClick={() => isModel && isLong && handleToggleCollapse(msg.id)}
+                  className={`max-w-xs md:max-w-sm rounded-lg px-4 py-2 ${msg.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-200'} ${isModel && isLong ? 'cursor-pointer' : ''}`}
+                >
+                  <p className="text-sm whitespace-pre-wrap">{contentToShow}</p>
+                  {isCollapsed && (
+                    <span className="text-xs text-cyan-400 block mt-1">(Click to expand)</span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {isLoading && (
             <div className="flex justify-start">
                <div className="max-w-xs md:max-w-sm rounded-lg px-4 py-2 bg-gray-700 text-gray-200">

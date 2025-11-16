@@ -1,5 +1,5 @@
 
-function decode(base64: string): Uint8Array {
+export function decode(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
   const bytes = new Uint8Array(len);
@@ -9,7 +9,7 @@ function decode(base64: string): Uint8Array {
   return bytes;
 }
 
-async function decodeAudioData(
+export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
   sampleRate: number,
@@ -26,19 +26,4 @@ async function decodeAudioData(
     }
   }
   return buffer;
-}
-
-const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-
-export async function playAudio(base64Audio: string): Promise<void> {
-  const decodedBytes = decode(base64Audio);
-  const audioBuffer = await decodeAudioData(decodedBytes, audioContext, 24000, 1);
-  
-  return new Promise((resolve) => {
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.onended = () => resolve();
-    source.start();
-  });
 }
