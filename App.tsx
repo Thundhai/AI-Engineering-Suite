@@ -1,16 +1,19 @@
 
+
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import PromptInput from './components/PromptInput';
 import AgentSelector from './components/AgentSelector';
 import OutputDisplay from './components/OutputDisplay';
-import { Project, EngineeringOutput, GenerationMode, ChatMessage, UploadedFile } from './types';
+import { Project, EngineeringOutput, GenerationMode, ChatMessage, UploadedFile, GeoLocation } from './types';
 import { detectActiveAgents, generateEngineeringOutput, generateSpeech, generateChatResponse } from './services/geminiService';
 import ModeSelector from './components/ModeSelector';
 import Chatbot from './components/Chatbot';
 import { ChatIcon } from './components/Icons';
 import { decode, decodeAudioData } from './utils/audioUtils';
 import ProjectManager from './components/ProjectManager';
+import AlphaEarthConnector from './components/AlphaEarthConnector';
 
 type AudioState = 'idle' | 'generating' | 'playing' | 'paused';
 
@@ -30,7 +33,6 @@ const App: React.FC = () => {
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
   const [audioState, setAudioState] = useState<AudioState>('idle');
 
-  const debounceTimeoutRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -89,24 +91,25 @@ const App: React.FC = () => {
     );
   };
 
-  useEffect(() => {
-    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    if (activeProject && activeProject.prompt.trim().length > 10) {
-      setIsDetecting(true);
-      debounceTimeoutRef.current = window.setTimeout(() => {
-        detectActiveAgents(activeProject.prompt).then(agents => {
-          setSuggestedAgents(agents);
-          updateActiveProject({ 
-            selectedAgents: Array.from(new Set([...activeProject.selectedAgents, ...agents]))
-          });
-          setIsDetecting(false);
-        });
-      }, 1000);
-    } else {
-        setIsDetecting(false);
-        setSuggestedAgents([]);
+  const handleDetectAgents = useCallback(async () => {
+    if (!activeProject || !activeProject.prompt.trim()) {
+        setError("Please enter a prompt before detecting agents.");
+        return;
     }
-  }, [activeProject?.prompt]);
+    setIsDetecting(true);
+    setError(null);
+    try {
+        const agents = await detectActiveAgents(activeProject.prompt);
+        setSuggestedAgents(agents);
+        updateActiveProject({
+            selectedAgents: Array.from(new Set([...activeProject.selectedAgents, ...agents]))
+        });
+    } catch (e: any) {
+        setError(e.message || "Failed to detect agents.");
+    } finally {
+        setIsDetecting(false);
+    }
+  }, [activeProject]);
 
   const handleCreateProject = (name: string) => {
     const newProject: Project = {
@@ -120,6 +123,7 @@ const App: React.FC = () => {
       isRedactionEnabled: false,
       output: null,
       chatHistory: [],
+      alphaEarthLocation: null,
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProjectId(newProject.id);
@@ -132,7 +136,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSaveProject = useCallback(() => {
+  const handleSaveProject = useCallback((): boolean => {
     try {
       localStorage.setItem('ai-engineering-projects', JSON.stringify(projects));
       if (activeProjectId) {
@@ -140,9 +144,11 @@ const App: React.FC = () => {
       } else {
         localStorage.removeItem('ai-engineering-active-project-id');
       }
+      return true;
     } catch (e) {
       console.error("Failed to manually save projects to localStorage", e);
       setError("Failed to save project. Check browser permissions for localStorage.");
+      return false;
     }
   }, [projects, activeProjectId]);
 
@@ -186,6 +192,11 @@ const App: React.FC = () => {
     if (!activeProject) return;
     updateActiveProject({ uploadedFiles: activeProject.uploadedFiles.filter(f => f.name !== fileName) });
   }, [activeProject]);
+
+  const handleSetAlphaEarthLocation = useCallback((location: GeoLocation | null) => {
+    if (!activeProject) return;
+    updateActiveProject({ alphaEarthLocation: location });
+  }, [activeProject]);
   
   const handleGenerate = useCallback(async () => {
     if (!activeProject || !activeProject.prompt.trim() || activeProject.selectedAgents.length === 0) {
@@ -196,7 +207,14 @@ const App: React.FC = () => {
     setError(null);
     updateActiveProject({ output: null });
     try {
-      const result = await generateEngineeringOutput(activeProject.prompt, activeProject.selectedAgents, activeProject.generationMode, activeProject.uploadedFiles, activeProject.isRedactionEnabled);
+      const result = await generateEngineeringOutput(
+        activeProject.prompt, 
+        activeProject.selectedAgents, 
+        activeProject.generationMode, 
+        activeProject.uploadedFiles, 
+        activeProject.isRedactionEnabled,
+        activeProject.alphaEarthLocation ?? null
+      );
       updateActiveProject({ output: result });
     } catch (e: any) {
       setError(e.message || "An unknown error occurred.");
@@ -212,15 +230,15 @@ const App: React.FC = () => {
     const updatedHistory = [...activeProject.chatHistory, userMessage];
     updateActiveProject({ chatHistory: updatedHistory });
     setIsChatLoading(true);
+    setError(null); // Clear previous errors
 
     try {
         const responseText = await generateChatResponse(updatedHistory);
         const sanitizedResponse = sanitizeModelResponse(responseText);
         const modelMessage: ChatMessage = { id: crypto.randomUUID(), role: 'model', content: sanitizedResponse };
         updateActiveProject({ chatHistory: [...updatedHistory, modelMessage] });
-    } catch(e) {
-        console.error("Chat Error:", e);
-        const errorMessage: ChatMessage = { id: crypto.randomUUID(), role: 'model', content: "Sorry, an error occurred." };
+    } catch(e: any) {
+        const errorMessage: ChatMessage = { id: crypto.randomUUID(), role: 'model', content: e.message || "Sorry, an error occurred." };
         updateActiveProject({ chatHistory: [...updatedHistory, errorMessage] });
     } finally {
         setIsChatLoading(false);
@@ -316,6 +334,13 @@ const App: React.FC = () => {
                     isRedactionEnabled={activeProject?.isRedactionEnabled ?? false}
                     onRedactionToggle={() => updateActiveProject({ isRedactionEnabled: !activeProject?.isRedactionEnabled })}
                     disabled={!activeProject}
+                    onDetectAgents={handleDetectAgents}
+                    isDetecting={isDetecting}
+                />
+                <AlphaEarthConnector
+                  location={activeProject?.alphaEarthLocation ?? null}
+                  onSetLocation={handleSetAlphaEarthLocation}
+                  disabled={!activeProject}
                 />
                 <ModeSelector
                     currentMode={activeProject?.generationMode ?? 'Balanced'}

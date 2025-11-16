@@ -41,6 +41,11 @@ export interface EngineeringOutput {
   final_recommendation: string;
 }
 
+export interface GeoLocation {
+  latitude: number;
+  longitude: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -52,4 +57,5 @@ export interface Project {
   isRedactionEnabled: boolean;
   output: EngineeringOutput | null;
   chatHistory: ChatMessage[];
+  alphaEarthLocation?: GeoLocation | null;
 }

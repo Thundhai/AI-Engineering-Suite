@@ -1,7 +1,8 @@
 
+
 import React, { useState } from 'react';
 import { Project } from '../types';
-import { ProjectIcon, PlusIcon, TrashIcon, SaveIcon, CheckIcon } from './Icons';
+import { ProjectIcon, PlusIcon, TrashIcon, SaveIcon, CheckIcon, ErrorIcon } from './Icons';
 
 interface ProjectManagerProps {
   projects: Project[];
@@ -9,13 +10,13 @@ interface ProjectManagerProps {
   onCreate: (name: string) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
-  onSave: () => void;
+  onSave: () => boolean;
 }
 
 const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProjectId, onCreate, onSelect, onDelete, onSave }) => {
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,11 +28,19 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProject
   };
   
   const handleSaveClick = () => {
-    onSave();
-    setSaveStatus('saved');
-    setTimeout(() => {
-      setSaveStatus('idle');
-    }, 2000);
+    if (saveStatus !== 'idle') return;
+    const success = onSave();
+    if (success) {
+      setSaveStatus('saved');
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 2000);
+    } else {
+      setSaveStatus('error');
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 3000);
+    }
   };
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name || 'No Active Project';
@@ -49,10 +58,12 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProject
         <div className="flex items-center gap-2">
             <button
                 onClick={handleSaveClick}
-                disabled={!activeProjectId || saveStatus === 'saved'}
-                className={`flex items-center gap-2 text-white font-bold py-2 px-3 rounded-md transition duration-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                disabled={!activeProjectId || saveStatus !== 'idle'}
+                className={`flex items-center gap-2 text-white font-bold py-2 px-3 rounded-md transition-colors duration-300 text-sm disabled:opacity-50 ${
                     saveStatus === 'saved'
-                    ? 'bg-green-600'
+                    ? 'bg-green-600 cursor-default'
+                    : saveStatus === 'error'
+                    ? 'bg-red-600 cursor-default'
                     : 'bg-gray-600 hover:bg-gray-500'
                 }`}
             >
@@ -60,6 +71,11 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProject
                 <>
                     <CheckIcon className="w-5 h-5" />
                     Saved!
+                </>
+                ) : saveStatus === 'error' ? (
+                <>
+                    <ErrorIcon className="w-5 h-5" />
+                    Save Failed
                 </>
                 ) : (
                 <>

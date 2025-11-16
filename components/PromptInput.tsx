@@ -1,6 +1,7 @@
 
+
 import React, { useRef } from 'react';
-import { GenerateIcon, UploadIcon, TrashIcon, ShieldIcon } from './Icons';
+import { GenerateIcon, UploadIcon, TrashIcon, ShieldIcon, WandIcon } from './Icons';
 import Spinner from './Spinner';
 import { UploadedFile } from '../types';
 
@@ -15,9 +16,11 @@ interface PromptInputProps {
   isRedactionEnabled: boolean;
   onRedactionToggle: () => void;
   disabled: boolean;
+  onDetectAgents: () => void;
+  isDetecting: boolean;
 }
 
-const PromptInput: React.FC<PromptInputProps> = ({ prompt, setPrompt, onGenerate, isGenerating, uploadedFiles, onFileUpload, onRemoveFile, isRedactionEnabled, onRedactionToggle, disabled }) => {
+const PromptInput: React.FC<PromptInputProps> = ({ prompt, setPrompt, onGenerate, isGenerating, uploadedFiles, onFileUpload, onRemoveFile, isRedactionEnabled, onRedactionToggle, disabled, onDetectAgents, isDetecting }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadClick = () => {
@@ -25,10 +28,30 @@ const PromptInput: React.FC<PromptInputProps> = ({ prompt, setPrompt, onGenerate
   };
 
   const isDisabled = isGenerating || disabled;
+  const isDetectionDisabled = isDisabled || isDetecting;
 
   return (
     <div className={`bg-gray-800 rounded-lg p-4 shadow-lg border border-gray-700 transition-opacity ${disabled ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}>
-      <h2 className="text-lg font-semibold mb-3 text-cyan-400">1. Engineering Request</h2>
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-lg font-semibold text-cyan-400">1. Engineering Request</h2>
+        <button
+          onClick={onDetectAgents}
+          disabled={isDetectionDisabled || !prompt.trim()}
+          className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600/50 disabled:cursor-not-allowed text-white font-bold py-1 px-3 rounded-md transition duration-300 text-sm"
+        >
+          {isDetecting ? (
+            <>
+              <Spinner size="sm" />
+              Detecting...
+            </>
+          ) : (
+            <>
+              <WandIcon className="w-4 h-4" />
+              Detect Agents
+            </>
+          )}
+        </button>
+      </div>
       <textarea
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}

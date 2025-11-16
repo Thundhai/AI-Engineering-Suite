@@ -1,3 +1,5 @@
+
+
 import React from 'react';
 
 type IconProps = {
@@ -98,6 +100,20 @@ export const PlusIcon: React.FC<IconProps> = ({ className }) => (
 export const SaveIcon: React.FC<IconProps> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M8 7v4a1 1 0 001 1h4a1 1 0 001-1V7M5 21h14a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+  </svg>
+);
+
+export const WandIcon: React.FC<IconProps> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104l-2.08 5.2a1.5 1.5 0 00.92 1.944l5.2 2.08a1.5 1.5 0 001.944-.92l2.08-5.2a1.5 1.5 0 00-.92-1.944l-5.2-2.08a1.5 1.5 0 00-1.944.92z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12l3 3m-3-3l-3 3m3-3l-3-3m3 3l3-3M3 6l3 3m-3-3l-3 3m3-3l-3-3m3 3l3-3" />
+  </svg>
+);
+
+export const MapPinIcon: React.FC<IconProps> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657l-5.657 5.657-5.657-5.657a8 8 0 1111.314 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
 
