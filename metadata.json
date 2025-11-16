@@ -1,0 +1,5 @@
+{
+  "name": "AI Engineering Suite",
+  "description": "A web application that simulates a multidisciplinary expert engineering system with automated agents. Users can input engineering requests, and the AI will determine which agents to activate and generate a structured JSON output with detailed engineering information.",
+  "requestFramePermissions": []
+}
