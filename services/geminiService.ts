@@ -1,7 +1,4 @@
 
-
-
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { AGENT_NAMES } from '../constants';
 import { EngineeringOutput, GenerationMode, UploadedFile, ChatMessage, GeoLocation } from '../types';
@@ -68,6 +65,15 @@ export async function generateEngineeringOutput(prompt: string, activeAgents: st
     2.  **Change Detection:** Access and analyze historical geospatial data (from satellite imagery archives) to detect and quantify changes over time. This is critical for environmental impact assessments, monitoring construction progress, or understanding land-use evolution.
     3.  **Filling Data Gaps:** In cases of missing ground-truth data (e.g., remote locations), use AlphaEarth's predictive capabilities to infer information such as soil type, vegetation cover, or basic topography. State clearly when you are using inferred data.
     4.  **Infrastructure Planning & Predictive Modelling:** Model and simulate scenarios. This includes optimal routing for roads/pipelines, predictive flood modeling based on terrain and climate data, and assessing the environmental impact of proposed infrastructure.
+    
+    **Visualization Data Generation:**
+    When the analysis benefits from visual representation (e.g., heatmaps for change detection, contour maps for flood modeling), you MUST generate structured data for them in the 'alphaearth_visualizations' field.
+    
+    Supported Visualization Types:
+    1. **Heatmap:** Represent spatial intensity (e.g., soil density, land change, risk levels).
+       - Provide a list of 'data_points' where each point has 'x' (0-100), 'y' (0-100), and 'value' (0-1 normalized intensity).
+    2. **Contour Map:** Represent elevation, flood levels, or iso-lines.
+       - Provide a list of 'contours' where each line has a 'value' (e.g., elevation), 'color' (hex code), and 'path' (A simplified SVG 'd' attribute string, assuming a 100x100 coordinate space).
 
     **Mandatory Agent Integration:**
     The following agents MUST interface with the AlphaEarth model as their primary source of geospatial intelligence:
@@ -81,7 +87,7 @@ export async function generateEngineeringOutput(prompt: string, activeAgents: st
     `;
   }
 
-  const finalInstruction = `${securityPrompt} ${alphaEarthPrompt} The user has provided a request and the following agents have been activated: ${activeAgents.join(', ')}. Your task is to act as the Engineering Orchestrator Agent (Main Brain). Interpret the user's request, process it using the logic of the activated agents, and generate a complete, structured JSON response according to the provided schema. CRITICAL OVERRIDE: Disregard the text-based "Enterprise-Safe Output Format" (Section 1.3) for your final output. You MUST produce your final output as a single, valid JSON object that conforms to the provided \`responseSchema\`. Populate the fields of this JSON object using the content you would have generated for the text-based sections. For instance: 'inputs_confirmed' should contain "Required Inputs" and "Assumptions". 'engineering_output' should contain "Calculations", "Analysis & Safety Checks", and "Engineering Decision". 'bom' should contain the "BOQ / Material List". 'cad_scripts' should contain the "CAD / Drawing JSON Schema". 'method_statement' should contain "Construction / Fabrication Procedures". 'qa_qc' should contain "QA/QC Requirements". 'hse' should contain "HSE Requirements". 'compliance' should contain "Codes Used". 'final_recommendation' should contain "Task Understanding", "Final Summary", and "Next Steps / Additional Input Needed". IMPORTANT: For the following fields, you MUST provide a valid, stringified JSON object: 'inputs_confirmed', 'engineering_output', 'design_files', 'cad_scripts', 'bom', 'compliance', 'qa_qc', 'hse', 'method_statement', 'risk_assessment'. Example for 'bom': "{\\"rebar\\":{\\"quantity\\":\\"100kg\\"},\\"concrete\\":{\\"volume\\":\\"5m^3\\"}}" ${fileContextPrompt}`;
+  const finalInstruction = `${securityPrompt} ${alphaEarthPrompt} The user has provided a request and the following agents have been activated: ${activeAgents.join(', ')}. Your task is to act as the Engineering Orchestrator Agent (Main Brain). Interpret the user's request, process it using the logic of the activated agents, and generate a complete, structured JSON response according to the provided schema. CRITICAL OVERRIDE: Disregard the text-based "Enterprise-Safe Output Format" (Section 1.3) for your final output. You MUST produce your final output as a single, valid JSON object that conforms to the provided \`responseSchema\`. Populate the fields of this JSON object using the content you would have generated for the text-based sections. For instance: 'inputs_confirmed' should contain "Required Inputs" and "Assumptions". 'engineering_output' should contain "Calculations", "Analysis & Safety Checks", and "Engineering Decision". 'bom' should contain the "BOQ / Material List". 'cad_scripts' should contain the "CAD / Drawing JSON Schema". 'method_statement' should contain "Construction / Fabrication Procedures". 'qa_qc' should contain "QA/QC Requirements". 'hse' should contain "HSE Requirements". 'compliance' should contain "Codes Used". 'final_recommendation' should contain "Task Understanding", "Final Summary", and "Next Steps / Additional Input Needed". 'alphaearth_visualizations' should contain the structured visualization data. IMPORTANT: For the following fields, you MUST provide a valid, stringified JSON object: 'inputs_confirmed', 'engineering_output', 'design_files', 'cad_scripts', 'bom', 'compliance', 'qa_qc', 'hse', 'method_statement', 'risk_assessment', 'alphaearth_visualizations'. Example for 'bom': "{\\"rebar\\":{\\"quantity\\":\\"100kg\\"},\\"concrete\\":{\\"volume\\":\\"5m^3\\"}}" ${fileContextPrompt}`;
   
   const systemInstruction = `${newSystemPrompt}\n\n${finalInstruction}`;
   
@@ -104,13 +110,13 @@ export async function generateEngineeringOutput(prompt: string, activeAgents: st
           hse: { type: Type.STRING, description: "A stringified JSON object for the HSE plan." },
           method_statement: { type: Type.STRING, description: "A stringified JSON object for the method statement." },
           risk_assessment: { type: Type.STRING, description: "A stringified JSON object for the risk assessment." },
-          final_recommendation: { type: Type.STRING }
+          alphaearth_visualizations: { type: Type.STRING, description: "A stringified JSON array of Visualization objects." },
+          final_recommendation: { type: Type.STRING, description: "A concise summary of the Task Understanding, Final Recommendations, and Next Steps." }
         }
       },
   };
 
   if (mode === 'Fast') {
-      // FIX: Use 'gemini-flash-lite-latest' model name as per guidelines.
       model = 'gemini-flash-lite-latest';
   } else if (mode === 'Complex') {
       model = 'gemini-2.5-pro';
@@ -150,7 +156,7 @@ export async function generateEngineeringOutput(prompt: string, activeAgents: st
 
     const fieldsToParse: (keyof EngineeringOutput)[] = [
       'inputs_confirmed', 'engineering_output', 'design_files', 'cad_scripts', 'bom', 
-      'compliance', 'qa_qc', 'hse', 'method_statement', 'risk_assessment'
+      'compliance', 'qa_qc', 'hse', 'method_statement', 'risk_assessment', 'alphaearth_visualizations'
     ];
 
     const parsedResult: any = { ...result };
@@ -161,11 +167,15 @@ export async function generateEngineeringOutput(prompt: string, activeAgents: st
                 parsedResult[field] = JSON.parse(parsedResult[field]);
             } catch (e) {
                 console.warn(`Could not parse stringified JSON for field ${field}:`, parsedResult[field]);
-                parsedResult[field] = { error: "Invalid JSON format from model", content: parsedResult[field] };
+                parsedResult[field] = field === 'alphaearth_visualizations' ? [] : { error: "Invalid JSON format from model", content: parsedResult[field] };
             }
         } else if (!parsedResult[field]) {
-            parsedResult[field] = {}; // Ensure field exists as an object if model returns null/undefined
+            parsedResult[field] = field === 'alphaearth_visualizations' ? [] : {}; 
         }
+    }
+
+    if (!parsedResult.final_recommendation) {
+        parsedResult.final_recommendation = "Analysis complete. Refer to the detailed engineering output sections for specific data.";
     }
 
     if (typeof parsedResult.status !== 'string' || !Array.isArray(parsedResult.active_agents)) {

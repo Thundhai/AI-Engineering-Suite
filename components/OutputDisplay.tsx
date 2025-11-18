@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { EngineeringOutput } from '../types';
-import { CopyIcon, CheckIcon, ErrorIcon, SpeakerIcon, PauseIcon } from './Icons';
+import { CopyIcon, CheckIcon, ErrorIcon, SpeakerIcon, PauseIcon, ChartBarIcon } from './Icons';
 import Spinner from './Spinner';
+import AlphaEarthVisualizer from './AlphaEarthVisualizer';
 
 type AudioState = 'idle' | 'generating' | 'playing' | 'paused';
 
@@ -20,7 +21,13 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({ output, error, isGenerati
 
   const tabs = useMemo(() => {
     if (!output) return [];
-    return ['all', ...Object.keys(output)];
+    const keys = Object.keys(output).filter(key => key !== 'alphaearth_visualizations');
+    const hasVisuals = output.alphaearth_visualizations && Array.isArray(output.alphaearth_visualizations) && output.alphaearth_visualizations.length > 0;
+    const tabList = ['all', ...keys];
+    if (hasVisuals) {
+        tabList.splice(1, 0, 'visuals'); // Insert visuals after 'all'
+    }
+    return tabList;
   }, [output]);
 
   const handleCopy = () => {
@@ -73,6 +80,14 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({ output, error, isGenerati
       );
     }
     
+    if (activeTab === 'visuals') {
+        return (
+            <div className="h-full overflow-y-auto p-4 bg-gray-900/80 rounded-b-lg">
+                <AlphaEarthVisualizer visualizations={output.alphaearth_visualizations || []} />
+            </div>
+        );
+    }
+
     const contentToDisplay = activeTab === 'all' ? output : { [activeTab]: (output as any)[activeTab] };
 
     return (
@@ -111,12 +126,13 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({ output, error, isGenerati
               <button 
                 key={tab} 
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1 text-sm font-medium rounded-md transition capitalize ${
+                className={`px-3 py-1 text-sm font-medium rounded-md transition capitalize flex items-center gap-2 ${
                   activeTab === tab 
                     ? 'bg-cyan-600 text-white' 
                     : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                 }`}
               >
+                {tab === 'visuals' && <ChartBarIcon className="w-4 h-4" />}
                 {tab.replace(/_/g, ' ')}
               </button>
             ))}

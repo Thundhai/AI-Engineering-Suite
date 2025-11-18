@@ -21,6 +21,29 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface VisualizationDataPoint {
+  x: number; // 0-100
+  y: number; // 0-100
+  value: number; // 0-1 intensity
+  label?: string;
+}
+
+export interface ContourLine {
+  path: string; // SVG path 'd' attribute
+  value: number;
+  color: string;
+}
+
+export interface Visualization {
+  type: 'heatmap' | 'contour';
+  title: string;
+  description: string;
+  data_points?: VisualizationDataPoint[];
+  contours?: ContourLine[];
+  x_label?: string;
+  y_label?: string;
+}
+
 export interface EngineeringOutput {
   status: 'success' | 'need_more_info' | 'error';
   active_agents: string[];
@@ -38,6 +61,7 @@ export interface EngineeringOutput {
   hse: Record<string, any>;
   method_statement: Record<string, any>;
   risk_assessment: Record<string, any>;
+  alphaearth_visualizations?: Visualization[];
   final_recommendation: string;
 }
 
