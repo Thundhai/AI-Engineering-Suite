@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { GeoLocation } from '../types';
-import { MapPinIcon } from './Icons';
-import Spinner from './Spinner';
+import { MapPinIcon, GlobeIcon, CheckIcon, SpinnerIcon } from './Icons';
 
 interface AlphaEarthConnectorProps {
   location: GeoLocation | null;
@@ -57,56 +57,111 @@ const AlphaEarthConnector: React.FC<AlphaEarthConnectorProps> = ({ location, onS
   };
 
   return (
-    <div className={`bg-gray-800 rounded-lg p-4 shadow-lg border border-gray-700 transition-opacity ${disabled ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}>
-      <div className="flex items-center gap-3 mb-3">
-        <MapPinIcon className="w-6 h-6 text-cyan-400" />
-        <h2 className="text-lg font-semibold text-cyan-400">AlphaEarth Mapping</h2>
+    <div className={`eng-panel p-4 transition-opacity ${disabled ? 'opacity-50' : 'opacity-100'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <GlobeIcon className={`w-4 h-4 ${location ? 'text-eng-accent' : 'text-slate-500'}`} />
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Geospatial Uplink</h3>
+        </div>
+        {location && (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-eng-accent/10 border border-eng-accent/30 rounded-full">
+            <div className="w-1 h-1 bg-eng-accent rounded-full animate-pulse"></div>
+            <span className="text-[9px] font-mono text-eng-accent uppercase tracking-widest">Active</span>
+          </div>
+        )}
       </div>
 
-      <div className="space-y-3">
-        <button
+      <div className="space-y-4">
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           onClick={handleGetCurrentLocation}
           disabled={disabled || isFetching}
-          className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600/50 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md transition duration-300"
+          className="w-full flex items-center justify-center gap-3 bg-slate-800 border border-eng-border text-slate-300 hover:bg-slate-700 py-2.5 rounded transition-all duration-300"
         >
-          {isFetching ? <Spinner size="sm" /> : 'Get Current Location'}
-        </button>
+          {isFetching ? (
+            <>
+              <SpinnerIcon className="w-4 h-4 animate-spin text-eng-accent" />
+              <span className="text-[11px] font-bold uppercase tracking-widest">Synchronizing...</span>
+            </>
+          ) : (
+            <>
+              <MapPinIcon className="w-4 h-4" />
+              <span className="text-[11px] font-bold uppercase tracking-widest">Auto-Detect Location</span>
+            </>
+          )}
+        </motion.button>
 
         <div className="flex items-center gap-2">
             <input 
                 type="number"
-                placeholder="Latitude"
+                placeholder="LAT"
                 value={manualLat}
                 onChange={(e) => setManualLat(e.target.value)}
                 disabled={disabled}
-                className="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-cyan-500 focus:outline-none transition"
+                className="w-full bg-slate-900/50 border border-eng-border rounded px-3 py-2 text-[11px] text-white focus:ring-1 focus:ring-eng-accent focus:outline-none transition font-mono"
             />
             <input 
                 type="number"
-                placeholder="Longitude"
+                placeholder="LON"
                 value={manualLon}
                 onChange={(e) => setManualLon(e.target.value)}
                 disabled={disabled}
-                className="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-cyan-500 focus:outline-none transition"
+                className="w-full bg-slate-900/50 border border-eng-border rounded px-3 py-2 text-[11px] text-white focus:ring-1 focus:ring-eng-accent focus:outline-none transition font-mono"
             />
-            <button
+            <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={handleSetManualLocation}
                 disabled={disabled || !manualLat || !manualLon}
-                className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition"
+                className="bg-eng-accent hover:bg-cyan-300 disabled:bg-slate-700 disabled:text-slate-500 text-eng-bg font-bold py-2 px-4 rounded text-[10px] uppercase tracking-widest transition shadow-lg shadow-eng-accent/10"
             >
                 Set
-            </button>
+            </motion.button>
         </div>
         
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        <AnimatePresence>
+          {error && (
+            <motion.p 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="text-[10px] text-red-400 font-mono"
+            >
+              ERR: {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
-        {location && (
-            <div className="bg-gray-900/50 p-3 rounded-md text-sm">
-                <p className="font-semibold text-white">Project Location Pinned:</p>
-                <p className="text-gray-300">Lat: {location.latitude.toFixed(6)}, Lon: {location.longitude.toFixed(6)}</p>
-                <button onClick={handleClearLocation} disabled={disabled} className="text-xs text-red-400 hover:underline mt-1">Clear</button>
-            </div>
-        )}
+        <AnimatePresence>
+          {location && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="bg-slate-900/50 border border-eng-accent/30 p-3 rounded flex items-center justify-between"
+              >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-eng-accent/10 rounded">
+                      <CheckIcon className="w-3.5 h-3.5 text-eng-accent" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest mb-0.5">Pinned Coordinates</span>
+                      <span className="text-[11px] font-mono text-white tracking-wider">
+                        {location.latitude.toFixed(6)}°N, {location.longitude.toFixed(6)}°W
+                      </span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleClearLocation} 
+                    disabled={disabled} 
+                    className="text-[9px] font-mono text-red-400 hover:text-red-300 uppercase tracking-widest transition-colors"
+                  >
+                    Purge
+                  </button>
+              </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

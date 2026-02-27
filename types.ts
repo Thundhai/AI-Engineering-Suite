@@ -5,6 +5,10 @@ export interface Agent {
   description: string;
   category: string;
   icon: React.FC<{ className?: string }>;
+  details?: {
+    useCases: string[];
+    limitations: string[];
+  };
 }
 
 export interface UploadedFile {
@@ -70,9 +74,20 @@ export interface GeoLocation {
   longitude: number;
 }
 
+export interface ProjectVersion {
+  id: string;
+  timestamp: string;
+  name: string;
+  prompt: string;
+  selectedAgents: string[];
+  generationMode: GenerationMode;
+  output: EngineeringOutput | null;
+}
+
 export interface Project {
   id: string;
   name: string;
+  description: string;
   createdAt: string;
   prompt: string;
   selectedAgents: string[];
@@ -82,4 +97,5 @@ export interface Project {
   output: EngineeringOutput | null;
   chatHistory: ChatMessage[];
   alphaEarthLocation?: GeoLocation | null;
+  versions: ProjectVersion[];
 }

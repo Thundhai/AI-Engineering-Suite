@@ -27,7 +27,7 @@ export async function detectActiveAgents(prompt: string): Promise<string[]> {
       contents: geminiPrompt,
     });
     
-    const text = response.text;
+    const text = response.text || '';
     const detectedAgents = text.split(',').map(name => name.trim()).filter(name => AGENT_NAMES.includes(name));
     return detectedAgents;
   } catch (error) {
@@ -257,7 +257,7 @@ export async function generateChatResponse(history: ChatMessage[]): Promise<stri
       model: 'gemini-2.5-flash',
       contents,
     });
-    return response.text;
+    return response.text || '';
   } catch (error) {
     console.error("Error in chat response:", error);
     if (error instanceof Error && (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED'))) {

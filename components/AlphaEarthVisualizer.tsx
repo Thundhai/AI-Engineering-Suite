@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { Visualization, VisualizationDataPoint, ContourLine } from '../types';
+import { motion } from 'motion/react';
+import { Visualization } from '../types';
 
 interface AlphaEarthVisualizerProps {
   visualizations: Visualization[];
@@ -8,114 +9,180 @@ interface AlphaEarthVisualizerProps {
 
 const AlphaEarthVisualizer: React.FC<AlphaEarthVisualizerProps> = ({ visualizations }) => {
   if (!visualizations || visualizations.length === 0) {
-    return <div className="text-gray-400 italic">No geospatial visualization data available for this report.</div>;
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-slate-600 italic p-8 border border-dashed border-eng-border/30 rounded m-4">
+        <p className="text-[10px] font-mono uppercase tracking-[0.4em]">Awaiting Geospatial Telemetry</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-8">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 p-4">
       {visualizations.map((viz, index) => (
-        <div key={index} className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
-          <h3 className="text-xl font-bold text-cyan-400 mb-2">{viz.title}</h3>
-          <p className="text-sm text-gray-300 mb-4">{viz.description}</p>
-          
-          <div className="relative w-full aspect-square max-w-md mx-auto bg-gray-900 border border-gray-600 rounded-md overflow-hidden">
-            <VisualizationChart viz={viz} />
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.1 }}
+          key={index} 
+          className="eng-panel flex flex-col h-[500px]"
+        >
+          <div className="eng-header flex justify-between items-center">
+             <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 bg-eng-accent rounded-full animate-pulse"></span>
+                <h3 className="text-[10px] font-bold text-white uppercase tracking-widest">
+                   {viz.title}
+                </h3>
+             </div>
+             <span className="text-[9px] font-mono text-slate-500 uppercase">{viz.type}</span>
           </div>
           
-          <div className="mt-2 flex justify-between text-xs text-gray-400 px-2 max-w-md mx-auto">
-             <span>{viz.x_label || 'Longitude / X-Axis'}</span>
-             <span>{viz.y_label || 'Latitude / Y-Axis'}</span>
+          <div className="p-4 flex flex-col h-full">
+            <p className="text-[10px] text-slate-400 mb-4 font-sans leading-relaxed line-clamp-2" title={viz.description}>
+              {viz.description}
+            </p>
+            
+            <div className="flex-grow w-full relative bg-slate-950 border border-eng-border/30 rounded overflow-hidden shadow-inner group">
+              <div className="absolute inset-0 eng-grid-bg opacity-10 pointer-events-none"></div>
+              <VisualizationChart viz={viz} />
+            </div>
+            
+            <div className="mt-3 flex justify-between text-[8px] text-slate-600 font-mono uppercase tracking-widest px-1">
+               <span>Coord_Min: 0.00</span>
+               <span>Geospatial Projection Grid</span>
+               <span>Coord_Max: 100.00</span>
+            </div>
           </div>
-        </div>
+        </motion.div>
       ))}
     </div>
   );
 };
 
 const VisualizationChart: React.FC<{ viz: Visualization }> = ({ viz }) => {
-    const [hoveredPoint, setHoveredPoint] = useState<VisualizationDataPoint | null>(null);
-    const [hoveredLine, setHoveredLine] = useState<ContourLine | null>(null);
+    const [tooltip, setTooltip] = useState<{ x: number, y: number, content: React.ReactNode } | null>(null);
+
+    const getHeatmapColor = (value: number) => {
+        const hue = (1 - Math.max(0, Math.min(1, value))) * 240; 
+        return `hsl(${hue}, 85%, 55%)`;
+    };
 
     if (viz.type === 'heatmap' && viz.data_points) {
         return (
-            <svg viewBox="0 0 100 100" className="w-full h-full">
-                {/* Grid background */}
-                <defs>
-                    <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                        <path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
-                    </pattern>
-                </defs>
-                <rect width="100" height="100" fill="url(#grid)" />
-
-                {viz.data_points.map((point, i) => (
-                    <circle
-                        key={i}
-                        cx={point.x}
-                        cy={100 - point.y} // Invert Y for SVG coords
-                        r={3 + point.value * 4}
-                        fill={`rgba(${255 * point.value}, ${255 * (1 - point.value)}, 50, 0.7)`}
-                        stroke="white"
-                        strokeWidth="0.2"
-                        onMouseEnter={() => setHoveredPoint(point)}
-                        onMouseLeave={() => setHoveredPoint(null)}
-                        className="transition-all duration-300 hover:opacity-100 cursor-crosshair"
-                    />
-                ))}
-                
-                {hoveredPoint && (
-                    <g>
-                        <rect 
-                            x="2" y="2" width="45" height="15" rx="2" 
-                            fill="rgba(0,0,0,0.8)" stroke="cyan" strokeWidth="0.5" 
-                        />
-                        <text x="5" y="12" fontSize="4" fill="white">
-                            Val: {hoveredPoint.value.toFixed(2)} (x:{hoveredPoint.x}, y:{hoveredPoint.y})
-                        </text>
+            <div className="w-full h-full relative" onMouseLeave={() => setTooltip(null)}>
+                <svg viewBox="0 0 100 100" className="w-full h-full" preserveAspectRatio="none">
+                    <defs>
+                        <filter id="heatmapBlur" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceGraphic" stdDeviation="6" />
+                        </filter>
+                    </defs>
+                    
+                    <g filter="url(#heatmapBlur)" opacity="0.6">
+                         {viz.data_points.map((point, i) => (
+                            <circle
+                                key={`blur-${i}`}
+                                cx={point.x}
+                                cy={100 - point.y}
+                                r={10}
+                                fill={getHeatmapColor(point.value)}
+                            />
+                        ))}
                     </g>
-                )}
-            </svg>
+
+                    {viz.data_points.map((point, i) => (
+                        <motion.circle
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ delay: i * 0.02 }}
+                            key={`pt-${i}`}
+                            cx={point.x}
+                            cy={100 - point.y}
+                            r={1.5}
+                            fill={getHeatmapColor(point.value)}
+                            stroke="rgba(255,255,255,0.8)"
+                            strokeWidth="0.2"
+                            className="transition-all duration-200 cursor-crosshair hover:r-3 hover:stroke-white"
+                            onMouseEnter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setTooltip({
+                                    x: rect.left + rect.width / 2, 
+                                    y: rect.top,
+                                    content: (
+                                        <div className="font-mono text-[10px]">
+                                            <div className="font-bold text-eng-accent mb-1 uppercase tracking-widest">Telemetry Point</div>
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500">Intensity:</span> <span>{(point.value * 100).toFixed(0)}%</span></div>
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500">Position:</span> <span>{point.x.toFixed(2)}, {point.y.toFixed(2)}</span></div>
+                                            {point.label && <div className="text-yellow-400 mt-1 border-t border-slate-700 pt-1">{point.label}</div>}
+                                        </div>
+                                    )
+                                });
+                            }}
+                        />
+                    ))}
+                </svg>
+
+                <div className="absolute bottom-4 right-4 bg-slate-900/80 backdrop-blur px-3 py-2 rounded border border-eng-border shadow-lg flex flex-col items-center gap-1">
+                     <div className="w-24 h-1.5 rounded-full bg-gradient-to-r from-blue-600 via-green-500 to-red-500"></div>
+                     <div className="flex justify-between w-full text-[8px] text-slate-500 uppercase font-bold tracking-widest">
+                        <span>Min</span>
+                        <span>Max</span>
+                     </div>
+                </div>
+
+                {tooltip && <Tooltip {...tooltip} />}
+            </div>
         );
     }
 
     if (viz.type === 'contour' && viz.contours) {
          return (
-            <svg viewBox="0 0 100 100" className="w-full h-full">
-                 <defs>
-                    <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                        <path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
-                    </pattern>
-                </defs>
-                <rect width="100" height="100" fill="url(#grid)" />
-
-                {viz.contours.map((line, i) => (
-                    <path
-                        key={i}
-                        d={line.path}
-                        fill="none"
-                        stroke={line.color || 'cyan'}
-                        strokeWidth="1"
-                        onMouseEnter={() => setHoveredLine(line)}
-                        onMouseLeave={() => setHoveredLine(null)}
-                        className="hover:stroke-width-2 cursor-pointer transition-all"
-                    />
-                ))}
-
-                 {hoveredLine && (
-                    <g>
-                         <rect 
-                            x="2" y="2" width="30" height="15" rx="2" 
-                            fill="rgba(0,0,0,0.8)" stroke={hoveredLine.color} strokeWidth="0.5" 
+             <div className="w-full h-full relative" onMouseLeave={() => setTooltip(null)}>
+                <svg viewBox="0 0 100 100" className="w-full h-full" preserveAspectRatio="none">
+                    {viz.contours.map((line, i) => (
+                        <motion.path
+                            initial={{ pathLength: 0, opacity: 0 }}
+                            animate={{ pathLength: 1, opacity: 1 }}
+                            transition={{ duration: 1, delay: i * 0.1 }}
+                            key={i}
+                            d={line.path}
+                            fill="none"
+                            stroke={line.color || '#22d3ee'}
+                            strokeWidth="0.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="transition-all duration-300 hover:stroke-[1.5px] hover:stroke-white cursor-pointer"
+                            onMouseEnter={(e) => {
+                                 setTooltip({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    content: (
+                                        <div className="font-mono text-[10px]">
+                                            <div className="font-bold text-eng-accent border-b border-slate-700 mb-1 pb-1 uppercase tracking-widest">Contour Gradient</div>
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500">Elevation:</span> <span className="text-white">{line.value}</span></div>
+                                        </div>
+                                    )
+                                });
+                            }}
                         />
-                        <text x="5" y="12" fontSize="4" fill="white">
-                            Level: {hoveredLine.value}
-                        </text>
-                    </g>
-                )}
-            </svg>
+                    ))}
+                </svg>
+                 {tooltip && <Tooltip {...tooltip} />}
+            </div>
          );
     }
 
-    return <div className="flex items-center justify-center h-full text-xs text-red-400">Unsupported or empty visualization data</div>;
+    return <div className="flex items-center justify-center h-full text-[10px] font-mono text-slate-600 uppercase tracking-widest">Null Data Buffer</div>;
+};
+
+const Tooltip: React.FC<{ x: number, y: number, content: React.ReactNode }> = ({ x, y, content }) => {
+    return (
+        <div 
+            className="fixed z-50 bg-slate-900/95 backdrop-blur border border-eng-accent/30 p-3 rounded shadow-2xl pointer-events-none transform -translate-x-1/2 -translate-y-[120%] transition-opacity duration-200"
+            style={{ left: x, top: y }}
+        >
+            {content}
+            <div className="absolute left-1/2 bottom-[-4px] w-2 h-2 bg-slate-900 border-r border-b border-eng-accent/30 transform -translate-x-1/2 rotate-45"></div>
+        </div>
+    );
 };
 
 export default AlphaEarthVisualizer;
