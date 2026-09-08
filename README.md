@@ -1,20 +1,29 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# AI Engineering Suite
 
-# Run and deploy your AI Studio app
+A multidisciplinary engineering assistant: describe a project, activate the
+relevant engineering agents (civil, structural, mechanical, electrical,
+MEP, and more), and generate a structured technical report — with project
+history, versioning, file attachments, and geospatial context.
 
-This contains everything you need to run your app locally.
+The Gemini API key never reaches the browser. It lives only in a Supabase
+Edge Function; the frontend talks to Supabase for auth, data, and file
+storage, and calls that function to generate reports.
 
-View your app in AI Studio: https://ai.studio/apps/b81818d3-4e5e-40b0-a975-2048591c83fd
+## Setup
 
-## Run Locally
+See [SETUP.md](SETUP.md) for the full walkthrough (create a Supabase
+project, run the migration, deploy the Edge Function, configure the
+frontend). Short version:
 
-**Prerequisites:**  Node.js
+```
+npm install
+cp .env.example .env.local   # fill in your Supabase URL + anon key
+npm run dev
+```
 
+## Scripts
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- `npm run dev` — start the dev server
+- `npm run build` — production build
+- `npm run lint` — type-check
+- `npm test` — run the test suite

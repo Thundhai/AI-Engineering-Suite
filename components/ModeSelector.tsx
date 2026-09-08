@@ -1,6 +1,5 @@
 
 import React from 'react';
-import { motion } from 'motion/react';
 import { GenerationMode } from '../types';
 import { ZapIcon, LayersIcon, ShieldIcon } from './Icons';
 
@@ -12,65 +11,54 @@ interface ModeSelectorProps {
 
 const ModeSelector: React.FC<ModeSelectorProps> = ({ currentMode, onModeChange, isDisabled }) => {
   const modes: { id: GenerationMode; label: string; icon: React.ReactNode; description: string }[] = [
-    { 
-      id: 'Fast', 
-      label: 'Rapid Prototype', 
+    {
+      id: 'Fast',
+      label: 'Quick draft',
       icon: <ZapIcon className="w-4 h-4" />,
-      description: 'Optimized for speed and initial conceptualization.'
+      description: 'Optimized for speed and early-stage ideas.'
     },
-    { 
-      id: 'Balanced', 
-      label: 'Standard Engineering', 
+    {
+      id: 'Balanced',
+      label: 'Standard',
       icon: <LayersIcon className="w-4 h-4" />,
-      description: 'Balanced precision and performance for general tasks.'
+      description: 'Balanced depth and speed for most requests.'
     },
-    { 
-      id: 'Complex', 
-      label: 'High Fidelity', 
+    {
+      id: 'Complex',
+      label: 'Thorough',
       icon: <ShieldIcon className="w-4 h-4" />,
-      description: 'Maximum depth and rigorous validation of outputs.'
+      description: 'Maximum depth and validation for complex work.'
     },
   ];
 
   return (
     <div className="eng-panel p-4">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="w-1.5 h-1.5 bg-eng-accent rounded-full animate-pulse"></span>
-        <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Processing Protocol</h3>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <h3 className="eng-label mb-3">Report depth</h3>
+
+      <div className="grid grid-cols-1 gap-2">
         {modes.map((m) => (
-          <motion.button
+          <button
             key={m.id}
-            whileHover={{ scale: 1.02, translateY: -2 }}
-            whileTap={{ scale: 0.98 }}
             onClick={() => onModeChange(m.id)}
             disabled={isDisabled}
-            className={`relative flex flex-col p-3 rounded border transition-all duration-300 text-left ${
-              currentMode === m.id 
-                ? 'bg-eng-accent/10 border-eng-accent shadow-[0_0_15px_rgba(34,211,238,0.1)]' 
-                : 'bg-slate-900/50 border-eng-border/50 hover:border-slate-600'
+            className={`flex items-start gap-3 p-3 rounded-md border transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed ${
+              currentMode === m.id
+                ? 'bg-eng-accent-soft border-eng-accent'
+                : 'bg-white border-eng-border hover:border-slate-300'
             }`}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`${currentMode === m.id ? 'text-eng-accent' : 'text-slate-500'}`}>
-                {m.icon}
-              </div>
-              <span className={`text-[11px] font-bold uppercase tracking-wider ${currentMode === m.id ? 'text-white' : 'text-slate-400'}`}>
+            <div className={`mt-0.5 ${currentMode === m.id ? 'text-eng-accent' : 'text-eng-muted'}`}>
+              {m.icon}
+            </div>
+            <div>
+              <span className={`text-sm font-medium ${currentMode === m.id ? 'text-eng-navy' : 'text-eng-ink'}`}>
                 {m.label}
               </span>
+              <p className="text-xs text-eng-muted leading-relaxed mt-0.5">
+                {m.description}
+              </p>
             </div>
-            <p className="text-[9px] text-slate-500 font-sans leading-relaxed">
-              {m.description}
-            </p>
-            {currentMode === m.id && (
-              <motion.div 
-                layoutId="activeMode"
-                className="absolute -top-1 -right-1 w-2 h-2 bg-eng-accent rounded-full shadow-[0_0_8px_#22d3ee]"
-              />
-            )}
-          </motion.button>
+          </button>
         ))}
       </div>
     </div>

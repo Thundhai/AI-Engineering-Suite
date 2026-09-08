@@ -1,5 +1,6 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { motion, AnimatePresence } from 'motion/react';
 import Header from './components/Header';
 import PromptInput from './components/PromptInput';
@@ -7,13 +8,17 @@ import AgentSelector from './components/AgentSelector';
 import OutputDisplay from './components/OutputDisplay';
 import { Project, EngineeringOutput, GenerationMode, ChatMessage, UploadedFile, GeoLocation, ProjectVersion } from './types';
 import { detectActiveAgents, generateEngineeringOutput, generateSpeech, generateChatResponse } from './services/geminiService';
+import * as projectsService from './services/projectsService';
+import { getSession, onAuthStateChange, signOut } from './services/authService';
 import ModeSelector from './components/ModeSelector';
 import Chatbot from './components/Chatbot';
-import { ChatIcon, FolderIcon, GearIcon, HistoryIcon, MapPinIcon, LayersIcon, CloseIcon } from './components/Icons';
+import { ChatIcon, FolderIcon, GearIcon, HistoryIcon, CloseIcon } from './components/Icons';
 import { decode, decodeAudioData } from './utils/audioUtils';
 import ProjectManager from './components/ProjectManager';
 import AlphaEarthConnector from './components/AlphaEarthConnector';
 import VersionControl from './components/VersionControl';
+import AuthScreen from './components/AuthScreen';
+import Spinner from './components/Spinner';
 
 type AudioState = 'idle' | 'generating' | 'playing' | 'paused';
 type SidebarTab = 'projects' | 'config' | 'history';
@@ -22,10 +27,16 @@ const sanitizeModelResponse = (text: string): string => {
   return text.replace(/(\*+)/g, '').trim();
 };
 
+const LAST_ACTIVE_PROJECT_KEY = 'ai-engineering-last-active-project-id';
+
 const App: React.FC = () => {
+  // `undefined` = auth state not checked yet, `null` = signed out.
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
+
   const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  
+
   const [suggestedAgents, setSuggestedAgents] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isDetecting, setIsDetecting] = useState<boolean>(false);
@@ -41,275 +52,292 @@ const App: React.FC = () => {
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackStartTimeRef = useRef<number>(0);
   const pausedAtTimeRef = useRef<number>(0);
+  const promptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
 
-  // Load projects from localStorage on initial mount
+  // --- Auth ---------------------------------------------------------------
   useEffect(() => {
-    try {
-      const savedProjects = localStorage.getItem('ai-engineering-projects');
-      if (savedProjects) {
-        const parsed = JSON.parse(savedProjects);
-        const migrated = parsed.map((p: any) => ({
-          ...p,
-          description: p.description || '',
-          versions: p.versions || []
-        }));
-        setProjects(migrated);
-      }
-      const savedActiveId = localStorage.getItem('ai-engineering-active-project-id');
-      if (savedActiveId) {
-        setActiveProjectId(savedActiveId);
-      }
-    } catch (e) {
-      console.error("Failed to load projects from localStorage", e);
-    }
+    getSession().then(setSession);
+    const unsubscribe = onAuthStateChange((s) => setSession(s));
+    return unsubscribe;
   }, []);
 
-  // Save projects to localStorage whenever they change
+  // --- Load this user's projects from Supabase once signed in ------------
   useEffect(() => {
-    try {
-      localStorage.setItem('ai-engineering-projects', JSON.stringify(projects));
-      if (activeProjectId) {
-        localStorage.setItem('ai-engineering-active-project-id', activeProjectId);
-      } else {
-        localStorage.removeItem('ai-engineering-active-project-id');
-      }
-    } catch (e) {
-      console.error("Failed to save projects to localStorage", e);
+    if (!session) {
+      setProjects([]);
+      setActiveProjectId(null);
+      return;
     }
-  }, [projects, activeProjectId]);
+    setIsLoadingProjects(true);
+    projectsService.listProjects()
+      .then((loaded) => {
+        setProjects(loaded);
+        const savedId = localStorage.getItem(LAST_ACTIVE_PROJECT_KEY);
+        if (savedId && loaded.some(p => p.id === savedId)) {
+          setActiveProjectId(savedId);
+        } else if (loaded.length > 0) {
+          setActiveProjectId(loaded[0].id);
+        }
+      })
+      .catch((e: any) => setError(e.message || 'Failed to load your projects.'))
+      .finally(() => setIsLoadingProjects(false));
+  }, [session]);
+
+  // Remember which project was open last — a UI convenience only, not a
+  // data store (the projects themselves live in Supabase).
+  useEffect(() => {
+    if (activeProjectId) {
+      localStorage.setItem(LAST_ACTIVE_PROJECT_KEY, activeProjectId);
+    } else {
+      localStorage.removeItem(LAST_ACTIVE_PROJECT_KEY);
+    }
+  }, [activeProjectId]);
 
   useEffect(() => {
-    // AudioContext setup
     if (typeof window !== 'undefined' && !audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
     return () => {
-        if(audioSourceRef.current) audioSourceRef.current.stop();
-        audioContextRef.current?.close();
+      if (audioSourceRef.current) audioSourceRef.current.stop();
+      audioContextRef.current?.close();
     };
   }, []);
 
-  const updateActiveProject = (updates: Partial<Omit<Project, 'id' | 'createdAt'>>) => {
+  // Applies a patch optimistically, then writes it through to Supabase.
+  // `debounce: true` is used for the high-frequency prompt textarea so we
+  // aren't writing to the database on every keystroke.
+  const updateActiveProject = useCallback((patch: projectsService.ProjectPatch, opts?: { debounce?: boolean }) => {
     if (!activeProjectId) return;
-    setProjects(prevProjects => 
-      prevProjects.map(p => 
-        p.id === activeProjectId ? { ...p, ...updates } : p
-      )
-    );
-  };
+    const id = activeProjectId;
+    setProjects(prev => prev.map(p => (p.id === id ? { ...p, ...patch } as Project : p)));
+
+    const commit = () => {
+      projectsService.updateProject(id, patch)
+        .then((updatedAt) => {
+          setProjects(prev => prev.map(p => (p.id === id ? { ...p, updatedAt } : p)));
+        })
+        .catch((e: any) => setError(e.message || 'Failed to save changes.'));
+    };
+
+    if (opts?.debounce) {
+      if (promptSaveTimerRef.current) clearTimeout(promptSaveTimerRef.current);
+      promptSaveTimerRef.current = setTimeout(commit, 800);
+    } else {
+      commit();
+    }
+  }, [activeProjectId]);
 
   const handleDetectAgents = useCallback(async () => {
     if (!activeProject || !activeProject.prompt.trim()) {
-        setError("Please enter a prompt before detecting agents.");
-        return;
+      setError('Please enter a prompt before detecting agents.');
+      return;
     }
     setIsDetecting(true);
     setError(null);
     try {
-        const agents: string[] = await detectActiveAgents(activeProject.prompt);
-        setSuggestedAgents(agents);
-        updateActiveProject({
-            selectedAgents: Array.from(new Set([...activeProject.selectedAgents, ...agents]))
-        });
+      const agents: string[] = await detectActiveAgents(activeProject.prompt);
+      setSuggestedAgents(agents);
+      updateActiveProject({
+        selectedAgents: Array.from(new Set([...activeProject.selectedAgents, ...agents]))
+      });
     } catch (e: any) {
-        setError(e.message || "Failed to detect agents.");
+      setError(e.message || 'Failed to detect agents.');
     } finally {
-        setIsDetecting(false);
+      setIsDetecting(false);
     }
-  }, [activeProject]);
+  }, [activeProject, updateActiveProject]);
 
-  const handleCreateProject = (name: string, description: string) => {
-    const newProject: Project = {
-      id: crypto.randomUUID(),
-      name,
-      description,
-      createdAt: new Date().toISOString(),
-      prompt: '',
-      selectedAgents: [],
-      uploadedFiles: [],
-      generationMode: 'Balanced',
-      isRedactionEnabled: false,
-      output: null,
-      chatHistory: [],
-      alphaEarthLocation: null,
-      versions: [],
-    };
-    setProjects(prev => [...prev, newProject]);
-    setActiveProjectId(newProject.id);
-  };
-
-  const handleDeleteProject = (id: string) => {
-    setProjects(prev => prev.filter(p => p.id !== id));
-    if (activeProjectId === id) {
-      setActiveProjectId(null);
-    }
-  };
-
-  const handleSaveProject = useCallback((): boolean => {
+  const handleCreateProject = useCallback(async (name: string, description: string) => {
     try {
-      localStorage.setItem('ai-engineering-projects', JSON.stringify(projects));
-      if (activeProjectId) {
-        localStorage.setItem('ai-engineering-active-project-id', activeProjectId);
-      } else {
-        localStorage.removeItem('ai-engineering-active-project-id');
-      }
-      return true;
-    } catch (e) {
-      console.error("Failed to manually save projects to localStorage", e);
-      setError("Failed to save project. Check browser permissions for localStorage.");
-      return false;
+      const newProject = await projectsService.createProject(name, description);
+      setProjects(prev => [newProject, ...prev]);
+      setActiveProjectId(newProject.id);
+    } catch (e: any) {
+      setError(e.message || 'Failed to create project.');
+    }
+  }, []);
+
+  const handleDeleteProject = useCallback(async (id: string) => {
+    const previous = projects;
+    setProjects(prev => prev.filter(p => p.id !== id));
+    if (activeProjectId === id) setActiveProjectId(null);
+    try {
+      await projectsService.deleteProject(id);
+    } catch (e: any) {
+      setProjects(previous);
+      setError(e.message || 'Failed to delete project.');
     }
   }, [projects, activeProjectId]);
 
   const handleAgentToggle = useCallback((agentName: string) => {
     if (!activeProject) return;
     const newSet = new Set<string>(activeProject.selectedAgents);
-    if (newSet.has(agentName)) {
-      newSet.delete(agentName);
-    } else {
-      newSet.add(agentName);
-    }
+    if (newSet.has(agentName)) newSet.delete(agentName);
+    else newSet.add(agentName);
     updateActiveProject({ selectedAgents: Array.from(newSet) });
-  }, [activeProject]);
+  }, [activeProject, updateActiveProject]);
 
   const handleFileUpload = useCallback(async (files: FileList | null) => {
     if (!files || !activeProject) return;
-    const filePromises = Array.from(files).map(file => 
-      new Promise<UploadedFile>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event: ProgressEvent<FileReader>) => {
-          const target = event.target;
-          const result = target?.result;
-          if (typeof result === 'string') {
-              const base64String = result.split(',')[1];
-              if (base64String) resolve({ name: file.name, mimeType: file.type || 'application/octet-stream', data: base64String });
-              else reject(new Error(`Failed to read file: ${file.name}`));
-          } else {
-             reject(new Error(`Failed to read file: ${file.name}`));
-          }
-        };
-        reader.onerror = (error) => reject(error);
-        reader.readAsDataURL(file);
-      })
-    );
+    const existingNames = new Set(activeProject.uploadedFiles.map(f => f.name));
+    const toUpload = Array.from(files).filter(f => !existingNames.has(f.name));
+    if (toUpload.length === 0) return;
     try {
-      const results = await Promise.all(filePromises);
-      const existingFileNames = new Set(activeProject.uploadedFiles.map(f => f.name));
-      const uniqueNewFiles = results.filter(f => !existingFileNames.has(f.name));
-      updateActiveProject({ uploadedFiles: [...activeProject.uploadedFiles, ...uniqueNewFiles] });
-    } catch(e) {
-      console.error("Error reading files:", e);
-      setError("There was an error uploading one or more files.");
+      const uploaded: UploadedFile[] = await Promise.all(
+        toUpload.map(f => projectsService.uploadProjectFile(activeProject.id, f))
+      );
+      setProjects(prev => prev.map(p => (
+        p.id === activeProject.id ? { ...p, uploadedFiles: [...p.uploadedFiles, ...uploaded] } : p
+      )));
+    } catch (e: any) {
+      setError(e.message || 'There was an error uploading one or more files.');
     }
   }, [activeProject]);
 
-  const handleRemoveFile = useCallback((fileName: string) => {
+  const handleRemoveFile = useCallback(async (fileId: string) => {
     if (!activeProject) return;
-    updateActiveProject({ uploadedFiles: activeProject.uploadedFiles.filter(f => f.name !== fileName) });
+    const file = activeProject.uploadedFiles.find(f => f.id === fileId);
+    if (!file) return;
+    setProjects(prev => prev.map(p => (
+      p.id === activeProject.id ? { ...p, uploadedFiles: p.uploadedFiles.filter(f => f.id !== fileId) } : p
+    )));
+    try {
+      await projectsService.removeProjectFile(file.id, file.storagePath);
+    } catch (e: any) {
+      setError(e.message || 'Failed to remove the file.');
+    }
   }, [activeProject]);
 
   const handleSetAlphaEarthLocation = useCallback((location: GeoLocation | null) => {
     if (!activeProject) return;
     updateActiveProject({ alphaEarthLocation: location });
-  }, [activeProject]);
+  }, [activeProject, updateActiveProject]);
 
-  const handleSaveVersion = useCallback((name: string) => {
+  const handleSaveVersion = useCallback(async (name: string) => {
     if (!activeProject) return;
-    const newVersion: ProjectVersion = {
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-      name: name || `Version ${activeProject.versions.length + 1}`,
-      prompt: activeProject.prompt,
-      selectedAgents: [...activeProject.selectedAgents],
-      generationMode: activeProject.generationMode,
-      output: activeProject.output ? JSON.parse(JSON.stringify(activeProject.output)) : null,
-    };
-    updateActiveProject({ versions: [...activeProject.versions, newVersion] });
+    try {
+      const newVersion = await projectsService.saveVersion(
+        activeProject.id,
+        name || `Version ${activeProject.versions.length + 1}`,
+        {
+          prompt: activeProject.prompt,
+          selectedAgents: activeProject.selectedAgents,
+          generationMode: activeProject.generationMode,
+          output: activeProject.output,
+        }
+      );
+      setProjects(prev => prev.map(p => (
+        p.id === activeProject.id ? { ...p, versions: [...p.versions, newVersion] } : p
+      )));
+    } catch (e: any) {
+      setError(e.message || 'Failed to save version.');
+    }
   }, [activeProject]);
 
   const handleRevertToVersion = useCallback((version: ProjectVersion) => {
-    if (!activeProject) return;
     updateActiveProject({
       prompt: version.prompt,
       selectedAgents: version.selectedAgents,
       generationMode: version.generationMode,
-      output: version.output ? JSON.parse(JSON.stringify(version.output)) : null,
+      output: version.output,
     });
+  }, [updateActiveProject]);
+
+  const handleDeleteVersion = useCallback(async (versionId: string) => {
+    if (!activeProject) return;
+    const previousVersions = activeProject.versions;
+    setProjects(prev => prev.map(p => (
+      p.id === activeProject.id ? { ...p, versions: p.versions.filter(v => v.id !== versionId) } : p
+    )));
+    try {
+      await projectsService.deleteVersion(versionId);
+    } catch (e: any) {
+      setProjects(prev => prev.map(p => (
+        p.id === activeProject.id ? { ...p, versions: previousVersions } : p
+      )));
+      setError(e.message || 'Failed to delete version.');
+    }
   }, [activeProject]);
 
-  const handleDeleteVersion = useCallback((versionId: string) => {
-    if (!activeProject) return;
-    updateActiveProject({
-      versions: activeProject.versions.filter(v => v.id !== versionId)
-    });
-  }, [activeProject]);
-  
   const handleGenerate = useCallback(async () => {
     if (!activeProject || !activeProject.prompt.trim() || activeProject.selectedAgents.length === 0) {
-      setError("Please enter a prompt and select at least one agent.");
+      setError('Please enter a request and select at least one agent.');
       return;
     }
     setIsGenerating(true);
     setError(null);
-    updateActiveProject({ output: null });
     try {
-      const result = await generateEngineeringOutput(
-        activeProject.prompt, 
-        activeProject.selectedAgents, 
-        activeProject.generationMode, 
-        activeProject.uploadedFiles, 
+      const result: EngineeringOutput = await generateEngineeringOutput(
+        activeProject.prompt,
+        activeProject.selectedAgents,
+        activeProject.generationMode,
+        activeProject.uploadedFiles,
         activeProject.isRedactionEnabled,
         activeProject.alphaEarthLocation ?? null
       );
       updateActiveProject({ output: result });
     } catch (e: any) {
-      setError(e.message || "An unknown error occurred.");
+      setError(e.message || 'An unknown error occurred.');
     } finally {
       setIsGenerating(false);
     }
-  }, [activeProject]);
-  
+  }, [activeProject, updateActiveProject]);
+
   const handleChatSend = useCallback(async (input: string) => {
     if (!activeProject || !input.trim()) return;
-    
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: input };
-    const updatedHistory = [...activeProject.chatHistory, userMessage];
-    updateActiveProject({ chatHistory: updatedHistory });
     setIsChatLoading(true);
-    setError(null); // Clear previous errors
-
+    setError(null);
     try {
-        const responseText = await generateChatResponse(updatedHistory);
-        const sanitizedResponse = sanitizeModelResponse(responseText);
-        const modelMessage: ChatMessage = { id: crypto.randomUUID(), role: 'model', content: sanitizedResponse };
-        updateActiveProject({ chatHistory: [...updatedHistory, modelMessage] });
-    } catch(e: any) {
-        const errorMessage: ChatMessage = { id: crypto.randomUUID(), role: 'model', content: e.message || "Sorry, an error occurred." };
-        updateActiveProject({ chatHistory: [...updatedHistory, errorMessage] });
+      const userMessage: ChatMessage = await projectsService.addChatMessage(activeProject.id, 'user', input);
+      setProjects(prev => prev.map(p => (
+        p.id === activeProject.id ? { ...p, chatHistory: [...p.chatHistory, userMessage] } : p
+      )));
+
+      const historyForModel = [...activeProject.chatHistory, userMessage];
+      const responseText = await generateChatResponse(historyForModel);
+      const sanitizedResponse = sanitizeModelResponse(responseText);
+      const modelMessage: ChatMessage = await projectsService.addChatMessage(activeProject.id, 'model', sanitizedResponse);
+      setProjects(prev => prev.map(p => (
+        p.id === activeProject.id ? { ...p, chatHistory: [...p.chatHistory, modelMessage] } : p
+      )));
+    } catch (e: any) {
+      const fallback: ChatMessage = { id: crypto.randomUUID(), role: 'model', content: e.message || 'Sorry, an error occurred.' };
+      setProjects(prev => prev.map(p => (
+        p.id === activeProject.id ? { ...p, chatHistory: [...p.chatHistory, fallback] } : p
+      )));
     } finally {
-        setIsChatLoading(false);
+      setIsChatLoading(false);
     }
   }, [activeProject]);
-  
-  // Audio playback logic (play, pause, handlePlayPause) remains largely the same
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut();
+    } catch (e: any) {
+      setError(e.message || 'Failed to sign out.');
+    }
+  }, []);
+
+  // Audio playback (unchanged behavior — TTS still runs through the same
+  // gemini-proxy Edge Function, only the transport changed).
   const play = useCallback((offset: number = 0) => {
     const audioContext = audioContextRef.current;
     const audioBuffer = audioBufferRef.current;
     if (!audioContext || !audioBuffer) return;
 
     if (audioSourceRef.current) {
-        audioSourceRef.current.onended = null;
-        try { audioSourceRef.current.stop(); } catch(e) {/* ignore if already stopped */}
+      audioSourceRef.current.onended = null;
+      try { audioSourceRef.current.stop(); } catch (e) { /* already stopped */ }
     }
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioContext.destination);
     source.onended = () => {
-        setAudioState('idle');
-        pausedAtTimeRef.current = 0;
-        audioSourceRef.current = null;
+      setAudioState('idle');
+      pausedAtTimeRef.current = 0;
+      audioSourceRef.current = null;
     };
     source.start(0, offset);
     audioSourceRef.current = source;
@@ -318,14 +346,14 @@ const App: React.FC = () => {
   }, []);
 
   const pause = useCallback(() => {
-      const audioContext = audioContextRef.current;
-      const source = audioSourceRef.current;
-      if (audioState !== 'playing' || !audioContext || !source) return;
-      const elapsedSincePlay = audioContext.currentTime - playbackStartTimeRef.current;
-      pausedAtTimeRef.current += elapsedSincePlay;
-      source.onended = null;
-      try { source.stop(); } catch(e) {/* ignore errors */}
-      setAudioState('paused');
+    const audioContext = audioContextRef.current;
+    const source = audioSourceRef.current;
+    if (audioState !== 'playing' || !audioContext || !source) return;
+    const elapsedSincePlay = audioContext.currentTime - playbackStartTimeRef.current;
+    pausedAtTimeRef.current += elapsedSincePlay;
+    source.onended = null;
+    try { source.stop(); } catch (e) { /* ignore */ }
+    setAudioState('paused');
   }, [audioState]);
 
   const handlePlayPause = useCallback(async (text?: string) => {
@@ -334,72 +362,83 @@ const App: React.FC = () => {
     if (audioContext.state === 'suspended') await audioContext.resume();
 
     switch (audioState) {
-        case 'idle':
-            if (!text) return;
-            setAudioState('generating');
-            try {
-                const audioData = await generateSpeech(text);
-                const decodedBytes = decode(audioData);
-                const buffer = await decodeAudioData(decodedBytes, audioContext, 24000, 1);
-                audioBufferRef.current = buffer;
-                pausedAtTimeRef.current = 0;
-                play(0);
-            } catch (e: any) {
-                setError(e.message || "Failed to play audio.");
-                setAudioState('idle');
-            }
-            break;
-        case 'playing': pause(); break;
-        case 'paused': play(pausedAtTimeRef.current); break;
-        default: break;
+      case 'idle':
+        if (!text) return;
+        setAudioState('generating');
+        try {
+          const audioData = await generateSpeech(text);
+          const decodedBytes = decode(audioData);
+          const buffer = await decodeAudioData(decodedBytes, audioContext, 24000, 1);
+          audioBufferRef.current = buffer;
+          pausedAtTimeRef.current = 0;
+          play(0);
+        } catch (e: any) {
+          setError(e.message || 'Failed to play audio.');
+          setAudioState('idle');
+        }
+        break;
+      case 'playing': pause(); break;
+      case 'paused': play(pausedAtTimeRef.current); break;
+      default: break;
     }
   }, [audioState, play, pause]);
-  
+
   const isUIInteractable = !!activeProject && !isGenerating;
 
+  if (session === undefined) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-eng-bg">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (session === null) {
+    return <AuthScreen onSignedIn={() => { /* onAuthStateChange updates session automatically */ }} />;
+  }
+
   return (
-    <div className="h-screen bg-eng-bg text-slate-200 font-sans flex flex-col eng-grid-bg overflow-hidden">
-      <Header />
-      
+    <div className="h-screen bg-eng-bg text-eng-ink font-sans flex flex-col overflow-hidden">
+      <Header userEmail={session.user.email ?? ''} onSignOut={handleSignOut} />
+
       <div className="flex flex-grow overflow-hidden relative">
-        {/* Sidebar Icons (Always visible) */}
-        <aside className="w-16 bg-eng-surface border-r border-eng-border flex flex-col items-center py-4 z-50 relative">
-          <SidebarTabButton 
-            id="projects" 
-            active={activeTab === 'projects' && isSidebarOpen} 
-            onClick={() => { 
+        <aside className="w-16 bg-white border-r border-eng-border flex flex-col items-center py-4 z-50 relative">
+          <SidebarTabButton
+            id="projects"
+            active={activeTab === 'projects' && isSidebarOpen}
+            onClick={() => {
               if (activeTab === 'projects' && isSidebarOpen) setIsSidebarOpen(false);
               else { setActiveTab('projects'); setIsSidebarOpen(true); }
-            }} 
-            icon={FolderIcon} 
-            label="Projects" 
+            }}
+            icon={FolderIcon}
+            label="Projects"
           />
-          <SidebarTabButton 
-            id="config" 
-            active={activeTab === 'config' && isSidebarOpen} 
-            onClick={() => { 
+          <SidebarTabButton
+            id="config"
+            active={activeTab === 'config' && isSidebarOpen}
+            onClick={() => {
               if (activeTab === 'config' && isSidebarOpen) setIsSidebarOpen(false);
               else { setActiveTab('config'); setIsSidebarOpen(true); }
-            }} 
-            icon={GearIcon} 
-            label="Config" 
+            }}
+            icon={GearIcon}
+            label="Config"
           />
-          <SidebarTabButton 
-            id="history" 
-            active={activeTab === 'history' && isSidebarOpen} 
-            onClick={() => { 
+          <SidebarTabButton
+            id="history"
+            active={activeTab === 'history' && isSidebarOpen}
+            onClick={() => {
               if (activeTab === 'history' && isSidebarOpen) setIsSidebarOpen(false);
               else { setActiveTab('history'); setIsSidebarOpen(true); }
-            }} 
-            icon={HistoryIcon} 
-            label="History" 
+            }}
+            icon={HistoryIcon}
+            label="History"
           />
-          
+
           <div className="mt-auto pt-4 border-t border-eng-border w-full flex justify-center">
-            <button 
+            <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 text-slate-500 hover:text-eng-accent transition-colors"
-              title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+              className="p-2 text-eng-muted hover:text-eng-accent transition-colors"
+              title={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
             >
               <div className={`transition-transform duration-300 ${isSidebarOpen ? 'rotate-180' : ''}`}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -410,104 +449,99 @@ const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* Sidebar Panel (Overlay Drawer) */}
         <AnimatePresence>
           {isSidebarOpen && (
             <>
-              {/* Scrim/Overlay to prevent interaction with main content when sidebar is open on small screens or for focus */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsSidebarOpen(false)}
-                className="absolute inset-0 bg-eng-bg/40 backdrop-blur-[2px] z-30 lg:hidden"
+                className="absolute inset-0 bg-eng-navy/10 backdrop-blur-[1px] z-30 lg:hidden"
               />
-              
+
               <motion.aside
                 initial={{ x: -320, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -320, opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="absolute left-16 top-0 bottom-0 w-80 bg-eng-surface/95 backdrop-blur-md border-r border-eng-border shadow-2xl z-40 overflow-hidden flex flex-col"
+                transition={{ type: 'tween', duration: 0.2 }}
+                className="absolute left-16 top-0 bottom-0 w-80 bg-white border-r border-eng-border shadow-lg z-40 overflow-hidden flex flex-col"
               >
-                <div className="flex items-center justify-between p-4 border-b border-eng-border bg-slate-800/50">
-                  <h2 className="text-xs font-bold text-eng-accent uppercase tracking-widest flex items-center gap-2">
+                <div className="flex items-center justify-between p-4 border-b border-eng-border bg-slate-50">
+                  <h2 className="text-sm font-semibold text-eng-navy flex items-center gap-2">
                     {activeTab === 'projects' && <FolderIcon className="w-4 h-4" />}
                     {activeTab === 'config' && <GearIcon className="w-4 h-4" />}
                     {activeTab === 'history' && <HistoryIcon className="w-4 h-4" />}
                     {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
                   </h2>
-                  <button 
+                  <button
                     onClick={() => setIsSidebarOpen(false)}
-                    className="p-1 text-slate-500 hover:text-white transition-colors"
+                    className="p-1 text-eng-muted hover:text-eng-navy transition-colors"
                   >
                     <CloseIcon className="w-4 h-4" />
                   </button>
                 </div>
 
                 <div className="flex-grow overflow-y-auto custom-scrollbar p-4">
-                  {activeTab === 'projects' && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="h-full"
-                    >
-                      <ProjectManager
-                        projects={projects}
-                        activeProjectId={activeProjectId}
-                        onCreate={handleCreateProject}
-                        onSelect={(id) => { setActiveProjectId(id); setIsSidebarOpen(false); }}
-                        onDelete={handleDeleteProject}
-                        onSaveVersion={handleSaveVersion}
-                        onRevertToVersion={handleRevertToVersion}
-                        onDeleteVersion={handleDeleteVersion}
-                        disabled={isGenerating}
-                      />
-                    </motion.div>
-                  )}
+                  {isLoadingProjects ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-3 text-eng-muted">
+                      <Spinner />
+                      <p className="text-sm">Loading your projects…</p>
+                    </div>
+                  ) : (
+                    <>
+                      {activeTab === 'projects' && (
+                        <div className="h-full">
+                          <ProjectManager
+                            projects={projects}
+                            activeProjectId={activeProjectId}
+                            onCreate={handleCreateProject}
+                            onSelect={(id) => { setActiveProjectId(id); setIsSidebarOpen(false); }}
+                            onDelete={handleDeleteProject}
+                            onSaveVersion={handleSaveVersion}
+                            onRevertToVersion={handleRevertToVersion}
+                            onDeleteVersion={handleDeleteVersion}
+                            disabled={isGenerating}
+                          />
+                        </div>
+                      )}
 
-                  {activeTab === 'config' && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex flex-col gap-6"
-                    >
-                      <ModeSelector
-                        currentMode={activeProject?.generationMode ?? 'Balanced'}
-                        onModeChange={(m) => updateActiveProject({ generationMode: m })}
-                        isDisabled={!isUIInteractable}
-                      />
+                      {activeTab === 'config' && (
+                        <div className="flex flex-col gap-6">
+                          <ModeSelector
+                            currentMode={activeProject?.generationMode ?? 'Balanced'}
+                            onModeChange={(m: GenerationMode) => updateActiveProject({ generationMode: m })}
+                            isDisabled={!isUIInteractable}
+                          />
 
-                      <AlphaEarthConnector
-                        location={activeProject?.alphaEarthLocation ?? null}
-                        onSetLocation={handleSetAlphaEarthLocation}
-                        disabled={!activeProject}
-                      />
+                          <AlphaEarthConnector
+                            location={activeProject?.alphaEarthLocation ?? null}
+                            onSetLocation={handleSetAlphaEarthLocation}
+                            disabled={!activeProject}
+                          />
 
-                      <AgentSelector
-                        selectedAgents={new Set(activeProject?.selectedAgents ?? [])}
-                        suggestedAgents={new Set(suggestedAgents)}
-                        onAgentToggle={handleAgentToggle}
-                        isDetecting={isDetecting}
-                        disabled={!activeProject}
-                      />
-                    </motion.div>
-                  )}
+                          <AgentSelector
+                            selectedAgents={new Set(activeProject?.selectedAgents ?? [])}
+                            suggestedAgents={new Set(suggestedAgents)}
+                            onAgentToggle={handleAgentToggle}
+                            isDetecting={isDetecting}
+                            disabled={!activeProject}
+                          />
+                        </div>
+                      )}
 
-                  {activeTab === 'history' && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex flex-col gap-6"
-                    >
-                      <VersionControl
-                        versions={activeProject?.versions ?? []}
-                        onSaveVersion={handleSaveVersion}
-                        onRevertToVersion={handleRevertToVersion}
-                        onDeleteVersion={handleDeleteVersion}
-                        disabled={!activeProject}
-                      />
-                    </motion.div>
+                      {activeTab === 'history' && (
+                        <div className="flex flex-col gap-6">
+                          <VersionControl
+                            versions={activeProject?.versions ?? []}
+                            onSaveVersion={handleSaveVersion}
+                            onRevertToVersion={handleRevertToVersion}
+                            onDeleteVersion={handleDeleteVersion}
+                            disabled={!activeProject}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </motion.aside>
@@ -515,52 +549,38 @@ const App: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* Main Content Area */}
         <main className="flex-grow overflow-y-auto custom-scrollbar p-6 flex flex-col items-center">
           <div className="max-w-5xl w-full flex flex-col gap-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <PromptInput 
-                prompt={activeProject?.prompt ?? ''}
-                setPrompt={(p) => updateActiveProject({ prompt: p })}
-                onGenerate={handleGenerate} 
-                isGenerating={isGenerating}
-                uploadedFiles={activeProject?.uploadedFiles ?? []}
-                onFileUpload={handleFileUpload}
-                onRemoveFile={handleRemoveFile}
-                isRedactionEnabled={activeProject?.isRedactionEnabled ?? false}
-                onRedactionToggle={() => updateActiveProject({ isRedactionEnabled: !activeProject?.isRedactionEnabled })}
-                disabled={!activeProject}
-                onDetectAgents={handleDetectAgents}
-                isDetecting={isDetecting}
-              />
-            </motion.div>
+            <PromptInput
+              prompt={activeProject?.prompt ?? ''}
+              setPrompt={(p) => updateActiveProject({ prompt: p }, { debounce: true })}
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
+              uploadedFiles={activeProject?.uploadedFiles ?? []}
+              onFileUpload={handleFileUpload}
+              onRemoveFile={handleRemoveFile}
+              isRedactionEnabled={activeProject?.isRedactionEnabled ?? false}
+              onRedactionToggle={() => updateActiveProject({ isRedactionEnabled: !activeProject?.isRedactionEnabled })}
+              disabled={!activeProject}
+              onDetectAgents={handleDetectAgents}
+              isDetecting={isDetecting}
+            />
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="flex-grow"
-            >
-              <OutputDisplay 
-                output={activeProject?.output ?? null}
-                error={error} 
-                isGenerating={isGenerating}
-                onPlayPause={handlePlayPause}
-                audioState={audioState}
-              />
-            </motion.div>
+            <OutputDisplay
+              output={activeProject?.output ?? null}
+              error={error}
+              isGenerating={isGenerating}
+              onPlayPause={handlePlayPause}
+              audioState={audioState}
+            />
           </div>
         </main>
       </div>
 
       <AnimatePresence>
         {isChatOpen && (
-          <Chatbot 
-            isOpen={isChatOpen} 
+          <Chatbot
+            isOpen={isChatOpen}
             onClose={() => setIsChatOpen(false)}
             messages={activeProject?.chatHistory ?? []}
             onSend={handleChatSend}
@@ -568,38 +588,36 @@ const App: React.FC = () => {
           />
         )}
       </AnimatePresence>
-      
-      <motion.button 
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
+
+      <button
         onClick={() => setIsChatOpen(true)}
-        className="fixed bottom-6 right-6 bg-eng-accent text-eng-bg rounded-full p-4 shadow-lg shadow-eng-accent/20 z-40"
-        aria-label="Open Chatbot"
+        className="fixed bottom-6 right-6 bg-eng-navy hover:bg-eng-navy-soft text-white rounded-full p-4 shadow-lg transition-colors z-40"
+        aria-label="Open assistant"
       >
-        <ChatIcon className="w-8 h-8" />
-      </motion.button>
+        <ChatIcon className="w-6 h-6" />
+      </button>
     </div>
   );
 };
 
-const SidebarTabButton: React.FC<{ 
-  id: SidebarTab; 
-  active: boolean; 
-  onClick: () => void; 
-  icon: React.FC<{className?: string}>;
+const SidebarTabButton: React.FC<{
+  id: SidebarTab;
+  active: boolean;
+  onClick: () => void;
+  icon: React.FC<{ className?: string }>;
   label: string;
 }> = ({ active, onClick, icon: Icon, label }) => (
   <button
     onClick={onClick}
-    className={`w-full flex flex-col items-center justify-center py-4 transition-all duration-300 ${
-      active 
-        ? 'sidebar-tab-active' 
-        : 'text-slate-500 border-r-2 border-transparent hover:text-slate-300 hover:bg-slate-800/50'
+    className={`w-full flex flex-col items-center justify-center py-4 transition-colors duration-150 ${
+      active
+        ? 'sidebar-tab-active'
+        : 'text-eng-muted border-r-2 border-transparent hover:text-eng-navy hover:bg-slate-50'
     }`}
     title={label}
   >
     <Icon className="w-5 h-5 mb-1" />
-    <span className="text-[8px] font-bold uppercase tracking-widest">{label}</span>
+    <span className="text-[10px] font-medium">{label}</span>
   </button>
 );
 

@@ -12,9 +12,14 @@ export interface Agent {
 }
 
 export interface UploadedFile {
+  id: string;
   name: string;
   mimeType: string;
-  data: string; // base64 encoded
+  // Path inside the private 'project-files' Storage bucket. The file's
+  // bytes are never held in the browser (or the database) once uploaded —
+  // only the gemini-proxy Edge Function reads them, on demand, using the
+  // requesting user's own credentials.
+  storagePath: string;
 }
 
 export type GenerationMode = 'Fast' | 'Balanced' | 'Complex';
@@ -86,9 +91,11 @@ export interface ProjectVersion {
 
 export interface Project {
   id: string;
+  userId: string;
   name: string;
   description: string;
   createdAt: string;
+  updatedAt: string;
   prompt: string;
   selectedAgents: string[];
   uploadedFiles: UploadedFile[];
