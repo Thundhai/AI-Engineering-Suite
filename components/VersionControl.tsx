@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { ProjectVersion } from '../types';
 import { SaveIcon, RevertIcon, TrashIcon } from './Icons';
 
@@ -11,12 +10,12 @@ interface VersionControlProps {
   disabled: boolean;
 }
 
-const VersionControl: React.FC<VersionControlProps> = ({ 
-  versions, 
-  onSaveVersion, 
-  onRevertToVersion, 
+const VersionControl: React.FC<VersionControlProps> = ({
+  versions,
+  onSaveVersion,
+  onRevertToVersion,
   onDeleteVersion,
-  disabled 
+  disabled
 }) => {
   const [newVersionName, setNewVersionName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -33,71 +32,61 @@ const VersionControl: React.FC<VersionControlProps> = ({
   return (
     <div className="space-y-4">
       {!isSaving ? (
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+        <button
           onClick={() => setIsSaving(true)}
           disabled={disabled}
-          className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-eng-accent border border-eng-accent/30 py-2 rounded text-[10px] font-bold uppercase tracking-widest transition-all"
+          className="w-full flex items-center justify-center gap-2 eng-button-secondary eng-button text-sm"
         >
           <SaveIcon className="w-4 h-4" />
-          Snapshot Current State
-        </motion.button>
+          Save current state as a version
+        </button>
       ) : (
-        <motion.form 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          onSubmit={handleSave} 
-          className="flex gap-2"
-        >
+        <form onSubmit={handleSave} className="flex gap-2">
           <input
             type="text"
             value={newVersionName}
             onChange={(e) => setNewVersionName(e.target.value)}
-            placeholder="Version Label (e.g. Rev A)..."
-            className="flex-grow bg-slate-900 border border-eng-accent/50 rounded px-3 py-2 text-[10px] text-white focus:outline-none font-mono"
+            placeholder="Version name (e.g. Rev A)..."
+            className="flex-grow eng-input text-sm"
             autoFocus
             disabled={disabled}
           />
           <button
             type="submit"
             disabled={disabled || !newVersionName.trim()}
-            className="bg-eng-accent text-eng-bg px-3 rounded text-[10px] font-bold uppercase tracking-widest"
+            className="eng-button eng-button-primary text-sm px-3"
           >
-            Commit
+            Save
           </button>
           <button
             type="button"
             onClick={() => setIsSaving(false)}
-            className="bg-slate-700 text-white px-3 rounded text-[10px] font-bold uppercase tracking-widest"
+            className="eng-button eng-button-secondary text-sm px-3"
           >
             Cancel
           </button>
-        </motion.form>
+        </form>
       )}
 
       <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
         {versions.length === 0 ? (
-          <p className="text-center py-6 text-[10px] font-mono text-slate-600 uppercase tracking-widest border border-dashed border-eng-border/30 rounded">
-            No Snapshots Found
+          <p className="text-center py-6 text-sm text-eng-muted border border-dashed border-eng-border rounded-md">
+            No saved versions yet
           </p>
         ) : (
           [...versions].reverse().map((version) => (
-            <motion.div
-              layout
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
+            <div
               key={version.id}
-              className="flex items-center justify-between p-2 bg-slate-900/50 border border-eng-border/30 rounded group hover:border-eng-accent/50 transition-all"
+              className="flex items-center justify-between p-2 bg-white border border-eng-border rounded-md group hover:border-eng-accent transition-colors"
             >
               <div className="flex flex-col">
-                <span className="text-[11px] font-bold text-slate-200 uppercase tracking-wider">{version.name}</span>
-                <span className="text-[9px] font-mono text-slate-500">{new Date(version.timestamp).toLocaleString()}</span>
+                <span className="text-sm font-medium text-eng-ink">{version.name}</span>
+                <span className="text-xs text-eng-muted">{new Date(version.timestamp).toLocaleString()}</span>
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => onRevertToVersion(version)}
-                  className="p-1.5 text-eng-accent hover:text-cyan-300 transition-colors"
+                  className="p-1.5 text-eng-accent hover:text-eng-navy transition-colors"
                   disabled={disabled}
                   title="Revert to this version"
                 >
@@ -105,14 +94,14 @@ const VersionControl: React.FC<VersionControlProps> = ({
                 </button>
                 <button
                   onClick={() => onDeleteVersion(version.id)}
-                  className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
+                  className="p-1.5 text-eng-muted hover:text-eng-danger transition-colors"
                   disabled={disabled}
                   title="Delete version"
                 >
                   <TrashIcon className="w-3.5 h-3.5" />
                 </button>
               </div>
-            </motion.div>
+            </div>
           ))
         )}
       </div>

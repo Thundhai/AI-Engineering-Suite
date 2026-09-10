@@ -1,74 +1,78 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  
-  --color-eng-bg: #0f172a;
-  --color-eng-surface: #1e293b;
-  --color-eng-border: #334155;
-  --color-eng-accent: #22d3ee;
-  --color-eng-accent-muted: rgba(34, 211, 238, 0.1);
-  --color-eng-success: #10b981;
-  --color-eng-warning: #f59e0b;
+
+  /* Corporate engineering palette: navy / steel-blue on white */
+  --color-eng-bg: #f4f6f8;        /* page background */
+  --color-eng-surface: #ffffff;   /* card/panel surface */
+  --color-eng-border: #e2e8f0;
+  --color-eng-navy: #0b2545;      /* brand / primary text */
+  --color-eng-navy-soft: #163a63;
+  --color-eng-accent: #2f6690;    /* steel-blue primary accent */
+  --color-eng-accent-soft: #eaf1f6;
+  --color-eng-ink: #1e293b;
+  --color-eng-muted: #64748b;
+  --color-eng-success: #15803d;
+  --color-eng-success-soft: #ecfdf3;
+  --color-eng-warning: #b45309;
+  --color-eng-warning-soft: #fffaeb;
+  --color-eng-danger: #b42318;
+  --color-eng-danger-soft: #fef3f2;
 }
 
 @layer base {
   body {
-    @apply bg-eng-bg text-slate-200 font-sans selection:bg-eng-accent/30;
+    @apply bg-eng-bg text-eng-ink font-sans selection:bg-eng-accent/20;
   }
-  
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
-  
+
   ::-webkit-scrollbar-track {
     @apply bg-eng-bg;
   }
-  
+
   ::-webkit-scrollbar-thumb {
-    @apply bg-eng-border rounded-full hover:bg-slate-500 transition-colors;
+    @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
   }
 }
 
 @layer components {
   .eng-panel {
-    @apply bg-eng-surface border border-eng-border rounded-lg shadow-xl overflow-hidden;
+    @apply bg-eng-surface border border-eng-border rounded-lg shadow-sm overflow-hidden;
   }
-  
+
   .eng-header {
-    @apply border-b border-eng-border px-4 py-2 bg-slate-800/50 flex items-center justify-between;
+    @apply border-b border-eng-border px-4 py-3 bg-white flex items-center justify-between;
   }
-  
+
   .eng-button {
-    @apply px-4 py-2 rounded font-medium transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply px-4 py-2 rounded-md font-medium text-sm transition-colors duration-150 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  
+
   .eng-button-primary {
-    @apply bg-eng-accent text-eng-bg hover:bg-cyan-300 active:scale-95;
+    @apply bg-eng-navy text-white hover:bg-eng-navy-soft;
   }
-  
+
   .eng-button-secondary {
-    @apply border border-eng-border hover:bg-eng-border active:scale-95;
+    @apply border border-eng-border bg-white text-eng-ink hover:bg-slate-50;
   }
-  
+
   .eng-input {
-    @apply bg-slate-900 border border-eng-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-eng-accent transition-all;
+    @apply bg-white border border-eng-border rounded-md px-3 py-2 text-eng-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-eng-accent/30 focus:border-eng-accent transition-colors;
   }
-  
+
   .eng-label {
-    @apply text-xs font-mono uppercase tracking-wider text-slate-400 mb-1 block;
-  }
-  
-  .eng-grid-bg {
-    background-image: radial-gradient(circle at 1px 1px, rgba(51, 65, 85, 0.3) 1px, transparent 0);
-    background-size: 24px 24px;
+    @apply text-xs font-medium text-eng-muted mb-1 block;
   }
 
   .sidebar-tab-active {
-    @apply text-eng-accent bg-eng-accent/5 border-r-2 border-eng-accent;
+    @apply text-eng-accent bg-eng-accent-soft border-r-2 border-eng-accent;
   }
 }
 
@@ -77,10 +81,16 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #cbd5e1;
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #94a3b8;
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
 }
